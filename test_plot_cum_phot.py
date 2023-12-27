@@ -11,7 +11,6 @@ import re
 
 import test_load_data as ld 
 import test_bin_lc as bl
-from jgmmedsig import *
 
 def plot_cum_phot(lcpath,targetname,ffname,exclude_dates,exclude_comps,normalize='none',binsize=10,show_plot=True,save_fig=False):
 
