@@ -13,11 +13,12 @@ from celerite2.theano import terms, GaussianProcess  # installed as part of exop
 
 # set period limits [d] for Lomb-Scargle search
 min_period = 0.1
-max_period = 100
+max_period = 50
 
 # I've set up this toggle to identify the appropriate directories for the given object
-#toggle = "2M3495"
-toggle = "2M4890"
+toggle = "2M3495"
+#toggle = "2M4890"
+print (toggle)
 
 # start the timer (to see how long the code takes)
 start = time()
@@ -108,8 +109,9 @@ fig, ax = plt.subplots(2, N, sharey='row', sharex=True, figsize=(14, 4))
 # load the list of comparison stars to use
 
 if toggle == "2M3495":
-    complist = np.array([3,4,5,6,7,8,9,10,11,12,13,14,15,16])
- 
+    #complist = np.array([3,4,5,6,7,8,9,10,11,12,13,14,15,16])
+    complist = np.array([3,4,5,6,7,8,9,10,11,12,14,16]) # for comp test with ap_phot
+
 elif toggle == "2M4890":
     complist = np.arange(2,90)
     bad_comps = np.array([2,4,5,14,20,28,33,38,42,47,33,67,68,79,82,83,88])
