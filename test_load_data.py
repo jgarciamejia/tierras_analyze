@@ -5,8 +5,6 @@ import glob
 import numpy as np
 import pandas as pd
 
-from jgmmedsig import *
-
 def find_all_cols_w_keywords(df,*keywords):
 	cols = []
 	for col in df.columns:
