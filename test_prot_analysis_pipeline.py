@@ -30,6 +30,7 @@ ap.add_argument("-min_period", required=False, type=float, default=0.1, help="Mi
 ap.add_argument("-max_period", required=False, type=float, default=100, help="Maximum period limit for the Lomb Scargle search, units=days. Defaults to 100 days.")
 ap.add_argument("-ls_resolution", required=False, type=int, default=100000, help="Resolution of the frequency array for the Lomb Scargle search. Defaults to 100000.")
 ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if any. Write the dates separated by a space (e.g., 19950119 19901023)")
+ap.add_argument("-exclude_comps", nargs='*',type=int,help="Comparison stars to exclude, if any. Write the comp/ref number assignments ONLY, separated by a space (e.g., 2 5 7 if you want to exclude references/comps R2,R5, and R7.) ")
 args = ap.parse_args()
 
 target = args.target
@@ -39,6 +40,7 @@ min_period = args.min_period
 max_period = args.max_period
 ls_resolution = args.ls_resolution
 exclude_dates = np.array(args.exclude_dates)
+exclude_comps = np.array(args.exclude_comps)
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
@@ -63,7 +65,10 @@ compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
 
-#pdb.set_trace()
+pdb.set_trace()
+
+mask = ~np.isin(complist,exclude_comps)
+complist = complist[mask]
 
 # loop: load raw target and ref fluxes into global lists
 for ii,lcfolder in enumerate(lcfolderlist):
