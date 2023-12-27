@@ -120,7 +120,7 @@ full_err = np.array(full_err)
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
 
-pdb.set_trace()
+#pdb.set_trace()
 
 ################################################################################################
 ###### TO DO: fix this plotting loop to be readable (for large N it becomes quite unruly) ######
