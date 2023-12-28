@@ -65,3 +65,67 @@ def return_data_onedate(mainpath,targetname,obsdate,ffname,exclude_comps): #JGM 
 		recalc_rel_flux_T1,_ = calc_rel_flux(df,exclude_comps)
 		rel_flux_T1 = recalc_rel_flux_T1
 	return (df,bjds,rel_flux_T1,airmasses,widths)
+
+def make_global_lists(lcfolderlist):
+	# arrays to hold the full dataset
+	full_bjd = []
+	full_flux = []
+	full_err = []
+	full_reg = None
+
+	# array to hold individual nights
+	bjd_save = []
+
+	lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))] 
+
+	for ii,lcfolder in enumerate(lcfolderlist):
+		print("Processing", lcdatelist[ii])
+
+		# if date excluded, skip
+		if np.any(exclude_dates == lcdatelist[ii]):
+			print ("{} :  Excluded".format(lcdatelist[ii]))
+			continue
+
+		# read the .csv file
+		try:
+			df, optimal_lc = ld.return_dataframe_onedate(lcpath,target,lcdatelist[ii],ffname)
+		except TypeError:
+			continue
+
+		bjds = df['BJD TDB'].to_numpy()
+		flux = df['Target Source-Sky ADU']
+		err = df['Target Source-Sky Error ADU']
+		expt = df['Exposure Time']
+
+		# get the comparison fluxes.
+		comps = {}
+		for comp_num in complist:
+			try:
+				comps[comp_num] = df['Ref '+str(comp_num)+' Source-Sky ADU'] / expt  # divide by exposure time since it can vary between nights
+			except:
+				print("Error with comp", str(comp_num))
+				continue
+
+		# make a list of all the comps
+		regressors = []
+		for key in comps.keys():
+			regressors.append(comps[key])
+		regressors = np.array(regressors)
+
+		# add this night of data to the full data set
+		full_bjd.extend(bjds)
+		full_flux.extend(flux/expt)
+		full_err.extend(err/expt)
+		bjd_save.append(bjds)
+
+		if full_reg is None:
+			full_reg = regressors
+		else:
+			full_reg = np.concatenate((full_reg, regressors), axis=1) 
+
+	# convert from lists to arrays
+	full_bjd = np.array(full_bjd)
+	full_flux = np.array(full_flux)
+	full_err = np.array(full_err)
+
+    return full_bjd, bjd_save, full_flux, full_err, full_reg
