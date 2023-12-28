@@ -59,13 +59,14 @@ complist = complist[mask & mask2]
 # Load raw target and reference fluxes into global lists
 full_bjd, bjd_save, full_flux, full_err, full_reg, full_relflux = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist)
 
-mu_raw_flux = np.nanmedian(full_flux)
-norm_full_flux = ((full_flux / mu_raw_flux) - 1) * 1e3 #median-normalized, zero-shifted flux, units:ppt
-
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
 
-# convert relative flux to ppt.
+# convert ap_phot relative flux to ppt
+mu_relflux = np.nanmedian(full_relflux)
+norm_relflux = ((full_relflux / mu_relflux) - 1) * 1e3 #median-normalized, zero-shifted flux, units:ppt
+
+# convert mearth-style relative flux to ppt.
 mu = np.nanmedian(y)
 y = ((y / mu) - 1) * 1e3 #median-normalized, zero-shifted CORRECTED/RELATIVE flux, units:ppt
 
@@ -86,18 +87,19 @@ for nth_night in range(nnights):
     original_inds = np.where((full_bjd > np.min(use_bjds)) & (full_bjd < np.max(use_bjds)))[0]
     corr_inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
 
-    # identify and plot the original data for the nth_night
+    # identify and plot the median-normalized, 
+    # zero-shifted relflux data for the nth_night
     night_bjd = full_bjd[original_inds]
-    night_flux = norm_full_flux[original_inds]
-    ax[nth_night].scatter(night_bjd-full_bjd[0],night_flux,color='black',s=2)
+    night_relflux = norm_relflux[original_inds]
+    ax[nth_night].scatter(night_bjd-full_bjd[0],night_relflux,color='black',s=2)
 
     # identify and plot the corrected data for the nth_night
     if len(corr_inds) == 0:  # if the entire nth_night was masked due to bad weather, don't plot anything
         continue
     else:
         corrected_bjd = x[corr_inds]
-        corrected_flux = y[corr_inds]
-        ax[nth_night].scatter(corrected_bjd-full_bjd[0], corrected_flux,color='purple', s=2)
+        corrected_relflux = y[corr_inds]
+        ax[nth_night].scatter(corrected_bjd-full_bjd[0], corrected_relflux,color='purple', s=2)
 
 ax[0].set_ylabel('Relative Flux [ppt]')
 fig.text(0.5, 0.01, 'BJD TDB - {}'.format(str(np.round(full_bjd[0],2))), ha='center')
