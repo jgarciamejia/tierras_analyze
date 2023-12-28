@@ -66,7 +66,7 @@ def return_data_onedate(mainpath,targetname,obsdate,ffname,exclude_comps): #JGM 
 		rel_flux_T1 = recalc_rel_flux_T1
 	return (df,bjds,rel_flux_T1,airmasses,widths)
 
-def make_global_lists(lcfolderlist):
+def make_global_lists(mainpath,targetname,ffname,exclude_dates):
 	# arrays to hold the full dataset
 	full_bjd = []
 	full_flux = []
@@ -75,7 +75,7 @@ def make_global_lists(lcfolderlist):
 
 	# array to hold individual nights
 	bjd_save = []
-
+        lcfolderlist = np.sort(glob.glob(mainpath+"/**/"+targetname))
 	lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))] 
 
 	for ii,lcfolder in enumerate(lcfolderlist):
