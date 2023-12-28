@@ -73,6 +73,9 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 	full_err = []
 	full_reg = None
 
+	full_relflux = []
+	full_corr_relflux = [] 
+
 	# array to hold individual nights
 	bjd_save = []
 	lcfolderlist = np.sort(glob.glob(mainpath+"/**/"+targetname))
@@ -96,8 +99,11 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 		flux = df['Target Source-Sky ADU']
 		err = df['Target Source-Sky Error ADU']
 		expt = df['Exposure Time']
-		print ('{} cadences'.format(len(bjds)))
+		
+		relflux = df['Target Relative Flux']
+		corr_relflux = df['Target Post-Processed Normalized Flux']
 
+		print ('{} cadences'.format(len(bjds)))
 
 		# get the comparison fluxes.
 		comps = {}
@@ -120,6 +126,9 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 		full_err.extend(err/expt)
 		bjd_save.append(bjds)
 
+		full_relflux.extend(relflux)
+		full_corr_relflux.extend(corr_relflux)
+
 		if full_reg is None:
 			full_reg = regressors
 		else:
@@ -130,4 +139,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 	full_flux = np.array(full_flux)
 	full_err = np.array(full_err)
 
-	return full_bjd, bjd_save, full_flux, full_err, full_reg
+	full_relflux = np.array(full_relflux)
+	full_corr_relflux = np.array(full_corr_relflux)
+
+	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_relflux, full_corr_relflux
