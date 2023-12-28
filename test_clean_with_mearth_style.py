@@ -64,22 +64,26 @@ x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to
 
 # convert ap_phot relative flux to ppt
 mu_relflux = np.nanmedian(full_relflux)
-norm_relflux = ((full_relflux / mu_relflux) - 1) * 1e3 #median-normalized, zero-shifted flux, units:ppt
+#norm_relflux = ((full_relflux / mu_relflux) - 1) * 1e3 #median-normalized, zero-shifted flux, units:ppt
+norm_relflux = full_relflux / mu_relflux
 
 # convert mearth-style relative flux to ppt.
 mu = np.nanmedian(y)
-y = ((y / mu) - 1) * 1e3 #median-normalized, zero-shifted CORRECTED/RELATIVE flux, units:ppt
-
+#y = ((y / mu) - 1) * 1e3 #median-normalized, zero-shifted CORRECTED/RELATIVE flux, units:ppt
+y = y / mu
 #pdb.set_trace()
 
-# Plot/compare original data to corrected data 
+
+# get list and number of dates for plotting
+lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))]
 try:
-    nnights = len(lcfolderlist) - len(exclude_dates) #N can be set to lower value for testing/inspection on individual nights. N should be = len(lcfolderlist)-len(exclude_dates) 
+    nnights = len(lcfolderlist) - len(exclude_dates)
 except TypeError:
     nnights = len(lcfolderlist)
 
-fig, ax = plt.subplots(1,nnights, sharey='row', figsize=(5*nnights, 5))
+# Plot/compare original data to corrected data 
 
+fig, ax = plt.subplots(1,nnights, sharey='row', figsize=(5*nnights, 5))
 for nth_night in range(nnights):
 
     # get the indices corresponding to the nth_night
@@ -91,7 +95,7 @@ for nth_night in range(nnights):
     # zero-shifted relflux data for the nth_night
     night_bjd = full_bjd[original_inds]
     night_relflux = norm_relflux[original_inds]
-    ax[nth_night].scatter(night_bjd-full_bjd[0],night_relflux,color='black',s=2)
+    ax[nth_night].scatter(night_bjd-full_bjd[0],night_relflux,color='black',s=2,label='Relative Flux (ap_phot.py)')
 
     # identify and plot the corrected data for the nth_night
     if len(corr_inds) == 0:  # if the entire nth_night was masked due to bad weather, don't plot anything
@@ -99,12 +103,15 @@ for nth_night in range(nnights):
     else:
         corrected_bjd = x[corr_inds]
         corrected_relflux = y[corr_inds]
-        ax[nth_night].scatter(corrected_bjd-full_bjd[0], corrected_relflux,color='purple', s=2)
+        ax[nth_night].scatter(corrected_bjd-full_bjd[0], corrected_relflux,color='purple', s=2, label='Zero-pt-corrected Flux (mearth_style_for_tierras.py)')
+        ax[nth_night].set_title(lcdatelist[nth_night])
 
-ax[0].set_ylabel('Relative Flux [ppt]')
+ax[0].set_ylabel('Median-Normalized Relative Flux')
 fig.text(0.5, 0.01, 'BJD TDB - {}'.format(str(np.round(full_bjd[0],2))), ha='center')
-ax[0].set_ylim(np.nanpercentile(y, 1), np.nanpercentile(y, 99))  # don't let outliers wreck the y-axis scale
-fig.tight_layout()
+ax[0].set_ylim(np.nanpercentile(y, 1)-.01, np.nanpercentile(y, 99)+.01)  # don't let outliers wreck the y-axis scale
+#fig.tight_layout()
+fig.suptitle(target)
+plt.legend()
 plt.subplots_adjust(wspace=0, hspace=0)
 plt.show()
 
