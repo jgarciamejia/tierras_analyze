@@ -57,7 +57,7 @@ complist = complist[mask & mask2]
 #pdb.set_trace()
 
 # Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist)
+full_bjd, bjd_save, full_flux, full_err, full_reg, full_relflux = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist)
 
 mu_raw_flux = np.nanmedian(full_flux)
 norm_full_flux = ((full_flux / mu_raw_flux) - 1) * 1e3 #median-normalized, zero-shifted flux, units:ppt
