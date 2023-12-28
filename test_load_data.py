@@ -74,7 +74,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 	full_reg = None
 
 	full_relflux = []
-	full_corr_relflux = [] 
+	#full_corr_relflux = [] 
 
 	# array to hold individual nights
 	bjd_save = []
@@ -101,7 +101,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 		expt = df['Exposure Time']
 		
 		relflux = df['Target Relative Flux']
-		corr_relflux = df['Target Post-Processed Normalized Flux']
+		#corr_relflux = df['Target Post-Processed Normalized Flux']
 
 		print ('{} cadences'.format(len(bjds)))
 
@@ -127,7 +127,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 		bjd_save.append(bjds)
 
 		full_relflux.extend(relflux)
-		full_corr_relflux.extend(corr_relflux)
+		#full_corr_relflux.extend(corr_relflux)
 
 		if full_reg is None:
 			full_reg = regressors
@@ -140,6 +140,6 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 	full_err = np.array(full_err)
 
 	full_relflux = np.array(full_relflux)
-	full_corr_relflux = np.array(full_corr_relflux)
+	#full_corr_relflux = np.array(full_corr_relflux)
 
-	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_relflux, full_corr_relflux
+	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_relflux#, full_corr_relflux
