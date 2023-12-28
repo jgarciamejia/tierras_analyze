@@ -128,4 +128,4 @@ def make_global_lists(lcfolderlist):
 	full_flux = np.array(full_flux)
 	full_err = np.array(full_err)
 
-    return full_bjd, bjd_save, full_flux, full_err, full_reg
+	return full_bjd, bjd_save, full_flux, full_err, full_reg
