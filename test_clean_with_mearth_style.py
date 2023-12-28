@@ -38,7 +38,7 @@ treshold = args.comp_weight_thold
 # Define data path
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
-#lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
+lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
 
 # Load the list of comparison stars to use from the FIRST night in the list.
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
@@ -54,15 +54,22 @@ compweights = compfname_df['Weight'].to_numpy()
 mask2 = compweights > treshold
 complist = complist[mask & mask2]
 
-pdb.set_trace()
+#pdb.set_trace()
 
-# Load raw target and ref fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg = ld.make_global_lists(lcpath,target,ffname,exclude_dates)
+# Load raw target and reference fluxes into global lists
+full_bjd, bjd_save, full_flux, full_err, full_reg = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist)
+
+mu_raw_flux = np.nanmedian(full_flux)
+norm_full_flux = ((full_flux / mu_raw_flux) - 1) * 1e3 #median-normalized, zero-shifted flux, units:ppt
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
 
-pdb.set_trace()
+# convert relative flux to ppt.
+mu = np.nanmedian(y)
+y = ((y / mu) - 1) * 1e3 #median-normalized, zero-shifted CORRECTED/RELATIVE flux, units:ppt
+
+#pdb.set_trace()
 
 # Plot/compare original data to corrected data 
 try:
@@ -70,7 +77,7 @@ try:
 except TypeError:
     nnights = len(lcfolderlist)
 
-fig, ax = plt.subplots((1,nnights), sharey='row', sharex=True, figsize=(5*nnights, 5))
+fig, ax = plt.subplots(1,nnights, sharey='row', figsize=(5*nnights, 5))
 
 for nth_night in range(nnights):
 
@@ -80,28 +87,24 @@ for nth_night in range(nnights):
     corr_inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
 
     # identify and plot the original data for the nth_night
-    bjd = full_bjd[original_inds]
-    flux = full_flux[original_inds]
-    ax[nth_night].scatter(bjd,flux,color='black',s=2)
+    night_bjd = full_bjd[original_inds]
+    night_flux = norm_full_flux[original_inds]
+    ax[nth_night].scatter(night_bjd-full_bjd[0],night_flux,color='black',s=2)
 
     # identify and plot the corrected data for the nth_night
     if len(corr_inds) == 0:  # if the entire nth_night was masked due to bad weather, don't plot anything
         continue
     else:
-        corrected_bjd = x[inds]
-        corrected_flux = y[inds]
-        err = err[inds]
-        ax[nth_night].errorbar(corrected_bjd, corrected_flux, yerr=err, color='purple', fmt='.')
+        corrected_bjd = x[corr_inds]
+        corrected_flux = y[corr_inds]
+        ax[nth_night].scatter(corrected_bjd-full_bjd[0], corrected_flux,color='purple', s=2)
 
-ax[0].set_ylabel('Flux')
-fig.text(0.5, 0.01, 'BJD TDB', ha='center')
+ax[0].set_ylabel('Relative Flux [ppt]')
+fig.text(0.5, 0.01, 'BJD TDB - {}'.format(str(np.round(full_bjd[0],2))), ha='center')
 ax[0].set_ylim(np.nanpercentile(y, 1), np.nanpercentile(y, 99))  # don't let outliers wreck the y-axis scale
 fig.tight_layout()
 plt.subplots_adjust(wspace=0, hspace=0)
+plt.show()
 
 
-# # convert relative flux to ppt.
-# mu = np.nanmedian(y)
-# y = (y / mu - 1) * 1e3
-# err = (err/mu) * 1e3
 
