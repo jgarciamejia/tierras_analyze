@@ -66,7 +66,7 @@ def return_data_onedate(mainpath,targetname,obsdate,ffname,exclude_comps): #JGM 
 		rel_flux_T1 = recalc_rel_flux_T1
 	return (df,bjds,rel_flux_T1,airmasses,widths)
 
-def make_global_lists(mainpath,targetname,ffname,exclude_dates):
+def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 	# arrays to hold the full dataset
 	full_bjd = []
 	full_flux = []
@@ -88,7 +88,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates):
 
 		# read the .csv file
 		try:
-			df, optimal_lc = ld.return_dataframe_onedate(lcpath,target,lcdatelist[ii],ffname)
+			df, optimal_lc = return_dataframe_onedate(mainpath,targetname,lcdatelist[ii],ffname)
 		except TypeError:
 			continue
 
@@ -96,6 +96,8 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates):
 		flux = df['Target Source-Sky ADU']
 		err = df['Target Source-Sky Error ADU']
 		expt = df['Exposure Time']
+		print ('{} cadences'.format(len(bjds)))
+
 
 		# get the comparison fluxes.
 		comps = {}
