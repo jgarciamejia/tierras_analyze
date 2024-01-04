@@ -87,11 +87,11 @@ for ii in range(N):
 		# identify and plot the night of data
 		bjd_plot = x[inds]
 		flux_plot = y[inds]
-                median_bjd,median_flux = np.nanmedian(bjd_plot),np.nanmedian(flux_plot)
+		median_bjd,median_flux = np.nanmedian(bjd_plot),np.nanmedian(flux_plot)
 		err_plot = err[inds]
 		markers, caps, bars = ax[ii].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
 		[bar.set_alpha(0.05) for bar in bars]
-                ax[ii].scatter((median_bjd-np.min(bjd_plot))*24,median_flux,s=6,marker='*')
+		ax[ii].scatter((median_bjd-np.min(bjd_plot))*24,median_flux,s=6,marker='*')
 
 		# add bins
 		tbin = 20  # bin size in minutes
