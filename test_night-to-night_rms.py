@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import pdb
 import glob
@@ -27,6 +28,7 @@ ap.add_argument("-ffname", required=True, help="Name of folder in which to store
 ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if any. Write the dates separated by a space (e.g., 19950119 19901023)")
 ap.add_argument("-ref_as_target", required=True, type=int, help="Reference star/comp star/regressor to load as the target.")
 ap.add_argument("-aperture_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
+ap.add_argument("-target_gaiaid", type=int, help="Gaia DR2 or DR3 ID for target. Numbers only - do not include the DRX suffix.")
 args = ap.parse_args()
 
 target = args.target
@@ -34,11 +36,14 @@ ffname = args.ffname
 exclude_dates = np.array(args.exclude_dates)
 ref_as_target = args.ref_as_target
 ap_radius = args.aperture_radius
+gaia_id = args.target_gaiaid
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
 lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
-lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))] 
+lcdatelist = np.array([lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))]) 
+date_mask = ~np.isin(lcdatelist,exclude_dates)
+lcdatelist = lcdatelist[date_mask]
 
 # load the list of comparison stars to use.
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
@@ -65,10 +70,6 @@ err = (err/mu) * 1e3
 ###### TO DO: fix this plotting loop to be readable (for large N it becomes quite unruly) ######
 # plot the data night-by-night
 # initialize the pplot
-try:
-    N = len(lcfolderlist) - len(exclude_dates) #N can be set to lower value for testing/inspection on individual nights. N should be = len(lcfolderlist)-len(exclude_dates) 
-except TypeError:
-    N = len(lcfolderlist)
 
 medians_per_night = []
 binned_medians_per_night = []
@@ -76,9 +77,9 @@ binned_medians_per_night = []
 fig, ax = plt.subplots(1, N, sharey='row', sharex=True, figsize=(30, 4))
 
 # loop through each night to 
-for ii in range(N):
+for nth_night in range(len(lcdatelist)):
 	# get the indices corresponding to a given night
-	use_bjds = np.array(bjd_save[ii])
+	use_bjds = np.array(bjd_save[nth_night])
 	inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
 	if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
 		continue
@@ -89,19 +90,25 @@ for ii in range(N):
 		flux_plot = y[inds]
 		median_bjd,median_flux = np.nanmedian(bjd_plot),np.nanmedian(flux_plot)
 		err_plot = err[inds]
-		markers, caps, bars = ax[ii].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
+		markers, caps, bars = ax[nth_night].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
 		[bar.set_alpha(0.05) for bar in bars]
-		ax[ii].scatter((median_bjd-np.min(bjd_plot))*24,median_flux,s=6,marker='*')
+		ax[nth_night].scatter((median_bjd-np.min(bjd_plot))*24, median_flux, s=70,color='white', edgecolor='black', marker='*', alpha=1.0, zorder=10)
 
 		# add bins
 		tbin = 20  # bin size in minutes
 		xs_b, binned, e_binned = ep_bin((bjd_plot - np.min(bjd_plot))*24, flux_plot, tbin/60.)
-		marker, caps, bars = ax[ii].errorbar(xs_b, binned, yerr=e_binned, color='purple', fmt='.', alpha=0.5, zorder=5)
+		marker, caps, bars = ax[nth_night].errorbar(xs_b, binned, yerr=e_binned, color='purple', fmt='.', alpha=0.5, zorder=5)
 		[bar.set_alpha(0.3) for bar in bars]
 
 		# calculate medians 
 		medians_per_night.append(np.nanmedian(flux_plot))
 		binned_medians_per_night.append(np.nanmedian(binned))
+                
+                # add title and moon info
+                date = lcdatelist[nth_night]
+                match = re.match
+                yyyy,mm,dd= 
+                ax[nth_night].set_title(lcdatelist[nth_night])
 
 # format the plot
 fig.text(0.5, 0.01, 'hours since start of night', ha='center')
