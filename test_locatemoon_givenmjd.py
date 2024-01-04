@@ -16,7 +16,7 @@ def get_mjd(): # copied from autoobserve.py. JGM Jan 2024
 def YYYYMMDD_to_mjd(datestr): 
 	match = re.match(r'(\d{4})(\d{2})(\d{2})', datestr)
 	yyyy, mm, dd = match.groups()
-	mjd = palpy.cldj(yyyy, mm, dd) # func to convert gregorian calendar to modified julian date 
+	mjd = palpy.cldj(int(yyyy), int(mm), int(dd)) # func to convert gregorian calendar to modified julian date 
 	return mjd 
 
 def get_gaia_param_table(gdr2_id): # adapted from query_functions.py. JGM Jan 2024. Omit GDR2 from star id.
