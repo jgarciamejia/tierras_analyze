@@ -42,7 +42,7 @@ max_period = args.max_period
 ls_resolution = args.ls_resolution
 exclude_dates = np.array(args.exclude_dates)
 exclude_comps = np.array(args.exclude_comps)
-ap_radius = args.ap_radius
+ap_radius = args.aperture_radius
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
@@ -62,9 +62,7 @@ mask = ~np.isin(complist,exclude_comps)
 complist = complist[mask]
 
 # Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg, 
-full_flux_div_expt, full_err_div_expt, full_relflux 
-= ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=ap_radius)
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
