@@ -30,19 +30,7 @@ def read_mjd_or_date(datestr): # copied from autoobserve.py. JGM Jan 2024
 
   return mjd 
 
-def find_substring(strings: np.ndarray, substring: str) -> str: # copied from query_functions.py. JGM Jan 2024
-  for string in strings:
-    if substring in string:
-      return string
-  return "Substring not found."
-
-def get_gaia_param_table(IDS): # copied from query_functions.py. JGM Jan 2024
-  all_ids = np.array(IDS)
-  all_ids = all_ids.astype('str')
-  try:
-    gdr2_id = find_substring(all_ids, "Gaia DR2").split(" ")[2]
-  except:
-    gdr2_id = find_substring(all_ids, "Gaia DR3").split(" ")[2]
+def get_gaia_param_table(gdr2_id): # adapted from query_functions.py. JGM Jan 2024. Omit GDR2 from star id.
   job = Gaia.launch_job("select * "
   "from gaiaedr3.gaia_source as gaia "
   "inner join gaiaedr3.dr2_neighbourhood as xmatch "
