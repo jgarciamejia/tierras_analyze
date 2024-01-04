@@ -1,9 +1,11 @@
 import re
+import math
 import time 
 import numpy as np
 
 import palpy
-import palutil 
+import palutil
+import twilight 
 
 from astroquery.gaia import Gaia
 
@@ -39,7 +41,7 @@ def get_gaia_param_table(gdr2_id): # adapted from query_functions.py. JGM Jan 20
   r = job.get_results()
   return r
 
-def apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd): # adapted from tobs.py. JGM Jan 2024
+def apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd, latitude, longitude, height): # adapted from tobs.py. JGM Jan 2024
 	# Units for input must be as they appear on Gaia DR2/DR3 catalogue 2023
 
 	# Compute variables to pass to mean2ast
@@ -66,14 +68,12 @@ def apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd): # adapted from 
 
 	return apra, apde, mjdmidnight 
 
-def get_moon_sep_and_illum(target_GDR2or3name, mjd):  # adapted from autoobserve.py. JGM Jan 2024
+def get_moon_sep_and_illum(target_GDR2or3name, mjd, latitude, longitude, height):  # adapted from autoobserve.py. JGM Jan 2024
 
 	# Set up Tierras site.
-	latitude = 31.680889 * palpy.DD2R #radians
-	longitude = -110.878750 * palpy.DD2R #radians
-	height = 2345.0 # meters
-	minha,maxha = -4.8, 4.8 # hrs
-	maxzd = 70 # deg, could be less or a bit more.
+	#latitude = 31.680889 * palpy.DD2R #radians
+	#longitude = -110.878750 * palpy.DD2R #radians
+	#height = 2345.0 # meters
 	sphi = np.sin(latitude) 
 	cphi = np.cos(latitude)
 
@@ -84,11 +84,11 @@ def get_moon_sep_and_illum(target_GDR2or3name, mjd):  # adapted from autoobserve
 	plx, epoch = float(gdr3_params["parallax"]), float(gdr3_params["ref_epoch"]) #mas, ref epoch
 
 	# Calculate target's apparent location at mjdmidnight
-	apra, apde, mjdmidnight = apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd)
+	apra, apde, mjdmidnight = apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd, latitude, longitude, height)
 
 	# Calculate Sun and Moon;s apparent location at mjdmidnight.
 	sun_apra, sun_apde, sun_diam = palpy.rdplan(mjdmidnight, 0, longitude, latitude) #rdplan: computes approx topocentric apparent RA and Dec of Solar Sysytem object in Radians. 
-	moon_apra, moon_apde, moon_diam = palpy.rdplan(mjdmidnight, 3, longitude, latitude)
+	moon_apra, moon_apde, moon_diam = palpy.rdplan(mjdmidnight, 3, longitude, latitude) #calculates location of moon at mjdmidnight.
 
 	# Calculate cosine of geocentric elongation of the moon from the sun.
 	cosphi = math.sin(sun_apde) * math.sin(moon_apde) + math.cos(sun_apde) * math.cos(moon_apde) * math.cos(sun_apra - moon_apra)
