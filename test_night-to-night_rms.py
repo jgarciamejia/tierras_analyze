@@ -109,8 +109,9 @@ for nth_night in range(len(lcdatelist)):
 
 		# add title and moon info
 		date = lcdatelist[nth_night]
-		moonsep, moonillum = get_moon_sep_and_illum(target_GDR2or3name, date, latitude, longitude, height)
-		ax[nth_night].
+		moonsep, moonillum = get_moon_sep_and_illum(target_gaiaid, date, latitude, longitude, height)
+		moonsep, moonillum = np.round(moonsep,1), np.round(moonillum,1)
+		ax[nth_night].text(0.95,0.95,'{} deg, {}%'.format(moonsep,moonillum))
 		ax[nth_night].set_title(lcdatelist[nth_night])
 
 # format the plot
