@@ -33,27 +33,26 @@ target = args.target
 ffname = args.ffname
 exclude_dates = np.array(args.exclude_dates)
 ref_as_target = args.ref_as_target
-ap_radius = args.ap_radius
+ap_radius = args.aperture_radius
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
 lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
 lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))] 
 
-# load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
+# load the list of comparison stars to use.
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
 compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
-complist = complist[np.argwhere(ref_as_target != 3)].T[0] #exclude reference used as target from list of comps
+mask= ~np.isin(complist,ref_as_target) #exclude reference used as target from list of comps
+complist = complist[mask]
 
 # Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg, 
-full_flux_div_expt, full_err_div_expt, full_relflux 
-= ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt = ld.make_global_lists_refastarget(ref_as_target,lcpath,target,ffname,exclude_dates,complist,ap_radius=ap_radius)
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
+x, y, err = mearth_style(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg) #TO DO: how to integrate weights into mearth_style?
 
 #pdb.set_trace()
 
@@ -88,9 +87,11 @@ for ii in range(N):
 		# identify and plot the night of data
 		bjd_plot = x[inds]
 		flux_plot = y[inds]
+                median_bjd,median_flux = np.nanmedian(bjd_plot),np.nanmedian(flux_plot)
 		err_plot = err[inds]
 		markers, caps, bars = ax[ii].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
 		[bar.set_alpha(0.05) for bar in bars]
+                ax[ii].scatter((median_bjd-np.min(bjd_plot))*24,median_flux,s=6,marker='*')
 
 		# add bins
 		tbin = 20  # bin size in minutes
@@ -112,8 +113,8 @@ fig.tight_layout()
 plt.show()
 ################################################################################################
 
-print("RMS data, native binning:", np.std(medians_per_night), "ppm")
-print("Binned RMS model:", np.std(binned_medians_per_night), "ppm in", tbin, "minute bins")
+print("RMS data, native binning:", np.std(medians_per_night)*1e3, "ppm")
+print("Binned RMS model:", np.std(binned_medians_per_night)*1e3, "ppm in", tbin, "minute bins")
 
 
 
