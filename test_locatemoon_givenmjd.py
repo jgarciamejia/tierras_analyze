@@ -5,6 +5,8 @@ import numpy as np
 import palpy
 import palutil 
 
+from astroquery.gaia import Gaia
+
 def get_mjd(): # copied from autoobserve.py. JGM Jan 2024
   mjd = (time.time() / 86400.0) + 40587.0 # 86400 sec = 1 day // 40587 addition to account for fact that MJD starts from 4713 BC but time.time from 1970 AD
   return mjd 
@@ -27,6 +29,12 @@ def read_mjd_or_date(datestr): # copied from autoobserve.py. JGM Jan 2024
       mjd -= 2400000.5 #convert it to Modified Julian Date
 
   return mjd 
+
+def find_substring(strings: np.ndarray, substring: str) -> str: # copied from query_functions.py. JGM Jan 2024
+  for string in strings:
+    if substring in string:
+      return string
+  return "Substring not found."
 
 def get_gaia_param_table(IDS): # copied from query_functions.py. JGM Jan 2024
   all_ids = np.array(IDS)
