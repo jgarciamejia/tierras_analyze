@@ -57,9 +57,7 @@ complist = complist[mask & mask2]
 #pdb.set_trace()
 
 # Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg, 
-full_flux_div_expt, full_err_div_expt, full_relflux 
-= ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius='optimal')
+full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius='optimal')
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg) #TO DO: how to integrate weights into mearth_style?
