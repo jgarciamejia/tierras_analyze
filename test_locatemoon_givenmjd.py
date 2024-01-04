@@ -13,24 +13,11 @@ def get_mjd(): # copied from autoobserve.py. JGM Jan 2024
   mjd = (time.time() / 86400.0) + 40587.0 # 86400 sec = 1 day // 40587 addition to account for fact that MJD starts from 4713 BC but time.time from 1970 AD
   return mjd 
 
-def read_mjd_or_date(datestr): # copied from autoobserve.py. JGM Jan 2024
-  m = re.match(r'^(\d{4})\-(\d{2})\-(\d{2})[Tt](\d+)\:(\d+)\:(\d+\.?\d*)$', datestr)
-  if m is not None:
-    gg = m.groups()
-    yr, mn, dy = map(int, gg[0:3]) # take the date , month and year of the datestr and turn them into ints
-    mjd = palpy.cldj(yr, mn, dy) # func to convert gregorian calendar to modified julian date 
-
-    if len(gg) > 3:
-      hh, mm, ss = gg[3:6]
-      frac = ((int(hh)*60 + int(mm)) * 60 + float(ss)) / 86400.0 # convert time to seconds then fraction of day 
-      mjd += frac # add fraction of day to MJD 
-
-  else:
-    mjd = float(datestr) # if datestr is provided as a Julian date, 
-    if mjd > 2400000.5: 
-      mjd -= 2400000.5 #convert it to Modified Julian Date
-
-  return mjd 
+def YYYYMMDD_to_mjd(datestr): 
+	match = re.match(r'(\d{4})(\d{2})(\d{2})', datestr)
+	yyyy, mm, dd = match.groups()
+	mjd = palpy.cldj(yyyy, mm, dd) # func to convert gregorian calendar to modified julian date 
+	return mjd 
 
 def get_gaia_param_table(gdr2_id): # adapted from query_functions.py. JGM Jan 2024. Omit GDR2 from star id.
   job = Gaia.launch_job("select * "
@@ -68,12 +55,8 @@ def apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd, latitude, longit
 
 	return apra, apde, mjdmidnight 
 
-def get_moon_sep_and_illum(target_GDR2or3name, mjd, latitude, longitude, height):  # adapted from autoobserve.py. JGM Jan 2024
+def get_moon_sep_and_illum(target_GDR2or3name, obsdate, latitude, longitude, height):  # adapted from autoobserve.py. JGM Jan 2024
 
-	# Set up Tierras site.
-	#latitude = 31.680889 * palpy.DD2R #radians
-	#longitude = -110.878750 * palpy.DD2R #radians
-	#height = 2345.0 # meters
 	sphi = np.sin(latitude) 
 	cphi = np.cos(latitude)
 
@@ -82,6 +65,9 @@ def get_moon_sep_and_illum(target_GDR2or3name, mjd, latitude, longitude, height)
 	RA, Dec = float(gdr3_params["ra"]), float(gdr3_params["dec"]) #deg 
 	pmra, pmdec = float(gdr3_params["pmra"]), float(gdr3_params["pmdec"]) #mas/yr
 	plx, epoch = float(gdr3_params["parallax"]), float(gdr3_params["ref_epoch"]) #mas, ref epoch
+
+	# Get mjd given obsdate 
+	mjd = YYYYMMDD_to_mjd(obsdate)
 
 	# Calculate target's apparent location at mjdmidnight
 	apra, apde, mjdmidnight = apra_apde_fromparams(RA, Dec, pmra, pmdec, plx, epoch, mjd, latitude, longitude, height)
