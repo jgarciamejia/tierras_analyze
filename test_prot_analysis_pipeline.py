@@ -42,6 +42,7 @@ ls_resolution = args.ls_resolution
 exclude_dates = np.array(args.exclude_dates)
 exclude_comps = np.array(args.exclude_comps)
 
+ap_radius = 15 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
 lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
@@ -65,7 +66,7 @@ compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
 
-pdb.set_trace()
+#pdb.set_trace()
 
 mask = ~np.isin(complist,exclude_comps)
 complist = complist[mask]
@@ -82,7 +83,7 @@ for ii,lcfolder in enumerate(lcfolderlist):
     
     # read the .csv file
     try:
-        df, optimal_lc = ld.return_dataframe_onedate(lcpath,target,lcdatelist[ii],ffname)
+        df, optimal_lc = ld.return_dataframe_onedate_forapradius(lcpath,target,lcdatelist[ii],ffname,ap_radius)
     except TypeError:
         continue
 
