@@ -26,88 +26,31 @@ ap.add_argument("-target", required=True, help="Name of observed target exactly 
 ap.add_argument("-ffname", required=True, help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
 ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if any. Write the dates separated by a space (e.g., 19950119 19901023)")
 ap.add_argument("-ref_as_target", required=True, type=int, help="Reference star/comp star/regressor to load as the target.")
+ap.add_argument("-aperture_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
 args = ap.parse_args()
 
 target = args.target
 ffname = args.ffname
 exclude_dates = np.array(args.exclude_dates)
 ref_as_target = args.ref_as_target
+ap_radius = args.ap_radius
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
 lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
 lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))] 
 
-# arrays to hold the full dataset
-full_bjd = []
-full_flux = []
-full_err = []
-full_reg = None
-
-# array to hold individual nights
-bjd_save = []
-
 # load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
 compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
-complist = complist[np.argwhere(complist != ref_as_target)].T[0] #exclude reference used as target from list of comps
+complist = complist[np.argwhere(ref_as_target != 3)].T[0] #exclude reference used as target from list of comps
 
-
-# loop: load raw target and ref fluxes into global lists
-for ii,lcfolder in enumerate(lcfolderlist):
-
-    print("Processing", lcdatelist[ii])
-
-    # if date excluded, skip
-    if np.any(exclude_dates == lcdatelist[ii]):
-        print ("{} :  Excluded".format(lcdatelist[ii]))
-        continue
-    
-    # read the .csv file
-    try:
-        df, optimal_lc = ld.return_dataframe_onedate(lcpath,target,lcdatelist[ii],ffname)
-    except TypeError:
-        continue
-
-    bjds = df['BJD TDB'].to_numpy()
-    flux = df['Ref '+str(ref_as_target)+' Source-Sky ADU']
-    err = df['Ref '+str(ref_as_target)+' Source-Sky Error ADU']
-    #flux = df['Target Source-Sky ADU']
-    #err = df['Target Source-Sky Error ADU']
-    expt = df['Exposure Time']
-
-    # get the comparison fluxes.
-    comps = {}
-    for comp_num in complist:
-        try:
-            comps[comp_num] = df['Ref '+str(comp_num)+' Source-Sky ADU'] / expt  # divide by exposure time since it can vary between nights
-        except:
-            print("Error with comp", str(comp_num))
-            continue
-
-    # make a list of all the comps
-    regressors = []
-    for key in comps.keys():
-        regressors.append(comps[key])
-    regressors = np.array(regressors)
-
-    # add this night of data to the full data set
-    full_bjd.extend(bjds)
-    full_flux.extend(flux/expt)
-    full_err.extend(err/expt)
-    bjd_save.append(bjds)
-
-    if full_reg is None:
-        full_reg = regressors
-    else:
-        full_reg = np.concatenate((full_reg, regressors), axis=1) 
-
-# convert from lists to arrays
-full_bjd = np.array(full_bjd)
-full_flux = np.array(full_flux)
-full_err = np.array(full_err)
+# Load raw target and reference fluxes into global lists
+full_bjd, bjd_save, full_flux, full_err, full_reg, 
+full_flux_div_expt, full_err_div_expt, full_relflux 
+= ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
@@ -162,15 +105,15 @@ for ii in range(N):
 # format the plot
 fig.text(0.5, 0.01, 'hours since start of night', ha='center')
 plt.subplots_adjust(wspace=0, hspace=0)
-ax[0].set_ylabel('corrected flux [ppt]')
+ax[0].set_ylabel('corrected flux')
 ax[0].set_xlabel("BJD")
 ax[0].set_ylim(np.nanpercentile(y, 1), np.nanpercentile(y, 99))  # don't let outliers wreck the y-axis scale
 fig.tight_layout()
 plt.show()
 ################################################################################################
 
-print("RMS data, native binning:", np.std(medians_per_night)*1e3, "ppm")
-print("Binned RMS model:", np.std(binned_medians_per_night)*1e3, "ppm in", tbin, "minute bins")
+print("RMS data, native binning:", np.std(medians_per_night), "ppm")
+print("Binned RMS model:", np.std(binned_medians_per_night), "ppm in", tbin, "minute bins")
 
 
 
