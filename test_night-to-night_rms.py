@@ -3,6 +3,7 @@ import re
 import sys
 import pdb
 import glob
+import palpy
 import argparse 
 import importlib
 import numpy as np
@@ -19,7 +20,10 @@ import test_load_data as ld
 from test_mearth_style_for_tierras import mearth_style
 from test_bin_lc import ep_bin 
 
-# Contributors (so far): JIrwin, EPass, JGarciaMejia.
+# Define site characteristics. Currently hard-coded for Tierras.
+latitude = 31.680889 * palpy.DD2R #radians
+longitude = -110.878750 * palpy.DD2R #radians
+height = 2345.0 # meters
 
 # Deal with command line
 ap = argparse.ArgumentParser()
@@ -38,6 +42,7 @@ ref_as_target = args.ref_as_target
 ap_radius = args.aperture_radius
 gaia_id = args.target_gaiaid
 
+# Define path to data  
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
 lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
@@ -45,7 +50,7 @@ lcdatelist = np.array([lcfolderlist[ind].split("/")[4] for ind in range(len(lcfo
 date_mask = ~np.isin(lcdatelist,exclude_dates)
 lcdatelist = lcdatelist[date_mask]
 
-# load the list of comparison stars to use.
+# Load the list of comparison stars to use.
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
 compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
@@ -58,8 +63,6 @@ full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg) #TO DO: how to integrate weights into mearth_style?
-
-#pdb.set_trace()
 
 # convert relative flux to ppt.
 mu = np.nanmedian(y)
@@ -103,12 +106,12 @@ for nth_night in range(len(lcdatelist)):
 		# calculate medians 
 		medians_per_night.append(np.nanmedian(flux_plot))
 		binned_medians_per_night.append(np.nanmedian(binned))
-                
-                # add title and moon info
-                date = lcdatelist[nth_night]
-                match = re.match
-                yyyy,mm,dd= 
-                ax[nth_night].set_title(lcdatelist[nth_night])
+
+		# add title and moon info
+		date = lcdatelist[nth_night]
+		moonsep, moonillum = get_moon_sep_and_illum(target_GDR2or3name, date, latitude, longitude, height)
+		ax[nth_night].
+		ax[nth_night].set_title(lcdatelist[nth_night])
 
 # format the plot
 fig.text(0.5, 0.01, 'hours since start of night', ha='center')
