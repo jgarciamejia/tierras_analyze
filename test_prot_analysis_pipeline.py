@@ -31,6 +31,7 @@ ap.add_argument("-max_period", required=False, type=float, default=100, help="Ma
 ap.add_argument("-ls_resolution", required=False, type=int, default=100000, help="Resolution of the frequency array for the Lomb Scargle search. Defaults to 100000.")
 ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if any. Write the dates separated by a space (e.g., 19950119 19901023)")
 ap.add_argument("-exclude_comps", nargs='*',type=int,help="Comparison stars to exclude, if any. Write the comp/ref number assignments ONLY, separated by a space (e.g., 2 5 7 if you want to exclude references/comps R2,R5, and R7.) ")
+ap.add_argument("-aperture_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
 args = ap.parse_args()
 
 target = args.target
@@ -41,8 +42,8 @@ max_period = args.max_period
 ls_resolution = args.ls_resolution
 exclude_dates = np.array(args.exclude_dates)
 exclude_comps = np.array(args.exclude_comps)
+ap_radius = args.ap_radius
 
-ap_radius = 15 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
 lcfolderlist = np.sort(glob.glob(lcpath+"/**/"+target))
@@ -51,77 +52,19 @@ lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist)
 # start the timer (to see how long the code takes)
 start = time()
 
-# arrays to hold the full dataset
-full_bjd = []
-full_flux = []
-full_err = []
-full_reg = None
-
-# array to hold individual nights
-bjd_save = []
-
 # load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
 compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
 
-#pdb.set_trace()
-
 mask = ~np.isin(complist,exclude_comps)
 complist = complist[mask]
 
-# loop: load raw target and ref fluxes into global lists
-for ii,lcfolder in enumerate(lcfolderlist):
-
-    print("Processing", lcdatelist[ii])
-
-    # if date excluded, skip
-    if np.any(exclude_dates == lcdatelist[ii]):
-        print ("{} :  Excluded".format(lcdatelist[ii]))
-        continue
-    
-    # read the .csv file
-    try:
-        df, optimal_lc = ld.return_dataframe_onedate_forapradius(lcpath,target,lcdatelist[ii],ffname,ap_radius)
-    except TypeError:
-        continue
-
-    bjds = df['BJD TDB'].to_numpy()
-    flux = df['Target Source-Sky ADU']
-    err = df['Target Source-Sky Error ADU']
-    expt = df['Exposure Time']
-
-    # get the comparison fluxes.
-    comps = {}
-    for comp_num in complist:
-        try:
-            comps[comp_num] = df['Ref '+str(comp_num)+' Source-Sky ADU'] / expt  # divide by exposure time since it can vary between nights
-        except:
-            print("Error with comp", str(comp_num))
-            continue
-
-    # make a list of all the comps
-    regressors = []
-    for key in comps.keys():
-        regressors.append(comps[key])
-    regressors = np.array(regressors)
-
-    # add this night of data to the full data set
-    full_bjd.extend(bjds)
-    full_flux.extend(flux/expt)
-    full_err.extend(err/expt)
-    bjd_save.append(bjds)
-
-    if full_reg is None:
-        full_reg = regressors
-    else:
-        full_reg = np.concatenate((full_reg, regressors), axis=1) 
-
-# convert from lists to arrays
-full_bjd = np.array(full_bjd)
-full_flux = np.array(full_flux)
-full_err = np.array(full_err)
+# Load raw target and reference fluxes into global lists
+full_bjd, bjd_save, full_flux, full_err, full_reg, 
+full_flux_div_expt, full_err_div_expt, full_relflux 
+= ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
