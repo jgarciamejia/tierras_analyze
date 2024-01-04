@@ -80,7 +80,7 @@ def get_moon_sep_and_illum(target_GDR2or3name, mjd):  # adapted from autoobserve
 	# get target's parameters from Gaia 
 	gdr3_params = get_gaia_param_table(target_GDR2or3name)
 	RA, Dec = float(gdr3_params["ra"]), float(gdr3_params["dec"]) #deg 
-	pma, pmd = float(gdr3_params["pmra"]), float(gdr3_params["pmdec"]) #mas/yr
+	pmra, pmdec = float(gdr3_params["pmra"]), float(gdr3_params["pmdec"]) #mas/yr
 	plx, epoch = float(gdr3_params["parallax"]), float(gdr3_params["ref_epoch"]) #mas, ref epoch
 
 	# Calculate target's apparent location at mjdmidnight
