@@ -92,47 +92,37 @@ for nth_night in range(len(lcdatelist)):
 		date_mask2 = ~np.isin(lcdatelist,lcdatelist[nth_night])
 		lcdatelist = lcdatelist[date_mask2]
 
-# loop through each night to plot data
+# plot data of each night not excluded by user and where data survived clean up:
 for nth_night in range(len(lcdatelist)):
-	# get the indices corresponding to a given night
-	use_bjds = np.array(bjd_save[nth_night])
-	inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
-	print (lcdatelist[nth_night],len(inds))
 
-	if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
-		print ('made it to continue')
-		continue
+	# identify and plot the night of data
+	bjd_plot = x[inds]
+	flux_plot = y[inds]
+	median_bjd,median_flux = np.nanmedian(bjd_plot),np.nanmedian(flux_plot)
+	err_plot = err[inds]
+	markers, caps, bars = ax[nth_night].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
+	[bar.set_alpha(0.05) for bar in bars]
+	ax[nth_night].scatter((median_bjd-np.min(bjd_plot))*24, median_flux, s=70,color='white', edgecolor='black', marker='*', alpha=1.0, zorder=10)
 
-	else:
+	# add bins
+	tbin = 20  # bin size in minutes
+	xs_b, binned, e_binned = ep_bin((bjd_plot - np.min(bjd_plot))*24, flux_plot, tbin/60.)
+	marker, caps, bars = ax[nth_night].errorbar(xs_b, binned, yerr=e_binned, color='purple', fmt='.', alpha=0.5, zorder=5)
+	[bar.set_alpha(0.3) for bar in bars]
 
-		# identify and plot the night of data
-		bjd_plot = x[inds]
-		flux_plot = y[inds]
-		median_bjd,median_flux = np.nanmedian(bjd_plot),np.nanmedian(flux_plot)
-		err_plot = err[inds]
-		markers, caps, bars = ax[nth_night].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
-		[bar.set_alpha(0.05) for bar in bars]
-		ax[nth_night].scatter((median_bjd-np.min(bjd_plot))*24, median_flux, s=70,color='white', edgecolor='black', marker='*', alpha=1.0, zorder=10)
+	# calculate medians 
+	medians_per_night.append(np.nanmedian(flux_plot))
+	binned_medians_per_night.append(np.nanmedian(binned))
 
-		# add bins
-		tbin = 20  # bin size in minutes
-		xs_b, binned, e_binned = ep_bin((bjd_plot - np.min(bjd_plot))*24, flux_plot, tbin/60.)
-		marker, caps, bars = ax[nth_night].errorbar(xs_b, binned, yerr=e_binned, color='purple', fmt='.', alpha=0.5, zorder=5)
-		[bar.set_alpha(0.3) for bar in bars]
-
-		# calculate medians 
-		medians_per_night.append(np.nanmedian(flux_plot))
-		binned_medians_per_night.append(np.nanmedian(binned))
-
-		# add title and moon info
-		date = lcdatelist[nth_night]
-		moonsep, moonillum = moon.get_moon_sep_and_illum(gaia_id, date, latitude, longitude, height)
-		moonsep, moonillum = np.round(moonsep,1), np.round(moonillum,1)
-		text_string1 = '{:.0f} deg'.format(moonsep)
-		text_string2 = '{:.0f} %'.format(moonillum)
-		ax[nth_night].text(0.95,0.95,text_string1, transform = ax[nth_night].transAxes,fontsize=8, verticalalignment='top',horizontalalignment='right')
-		ax[nth_night].text(0.95,0.90,text_string2, transform = ax[nth_night].transAxes,fontsize=8, verticalalignment='top',horizontalalignment='right')
-		ax[nth_night].set_title(lcdatelist[nth_night])
+	# add title and moon info
+	date = lcdatelist[nth_night]
+	moonsep, moonillum = moon.get_moon_sep_and_illum(gaia_id, date, latitude, longitude, height)
+	moonsep, moonillum = np.round(moonsep,1), np.round(moonillum,1)
+	text_string1 = '{:.0f} deg'.format(moonsep)
+	text_string2 = '{:.0f} %'.format(moonillum)
+	ax[nth_night].text(0.95,0.95,text_string1, transform = ax[nth_night].transAxes,fontsize=8, verticalalignment='top',horizontalalignment='right')
+	ax[nth_night].text(0.95,0.90,text_string2, transform = ax[nth_night].transAxes,fontsize=8, verticalalignment='top',horizontalalignment='right')
+	ax[nth_night].set_title(lcdatelist[nth_night])
 
 # format the plot
 fig.text(0.5, 0.01, 'hours since start of night', ha='center')
