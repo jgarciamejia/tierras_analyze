@@ -47,12 +47,27 @@ def return_dataframe_onedate(mainpath,targetname,obsdate,ffname): #JGM MODIFIED 
 	datepath = os.path.join(mainpath,obsdate,targetname,ffname)
 	optimal_lc_fname = os.path.join(datepath,'optimal_lc.txt') #returns only optimal aperture lc
 	try:
-		optimal_lc_csv = open(optimal_lc_fname).read()
+		optimal_lc_csv = open(optimal_lc_fname).read().rstrip('\n')
 		df = pd.read_csv(optimal_lc_csv)
 	except FileNotFoundError:
 		print ("No photometric extraction for {} on {}".format(targetname,obsdate))
 		return None
 	return df, optimal_lc_csv
+
+def return_dataframe_onedate_forapradius(mainpath,targetname,obsdate,ffname,ap_radius=None): #JGM MODIFIED JAN3/2024: return dataframe for a user-defined aperture.
+        if ap_radius == None:
+                df,lc_fname = return_dataframe_onedate(mainpath,targetname,obsdate,ffname)
+                return df,lc_fname
+        elif ap_radius is not None:
+                datepath = os.path.join(mainpath,obsdate,targetname,ffname)
+                lc_fname = os.path.join(datepath,'circular_fixed_ap_phot_{}.csv'.format(str(ap_radius)))
+                print (ap_radius)
+                try:
+                        df = pd.read_csv(lc_fname)
+                except FileNotFoundError:
+                        print ("No photometric extraction for {} with aperture radius of {} pixels on {}".format(targetname,ap_radius,obsdate))
+                        return None
+                return df, lc_fname
 
 def return_data_onedate(mainpath,targetname,obsdate,ffname,exclude_comps): #JGM MODIFIED NOV 9/2023
 	df,filename = return_dataframe_onedate(mainpath,targetname,obsdate,ffname)
@@ -124,6 +139,87 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist):
 		full_bjd.extend(bjds)
 		full_flux.extend(flux/expt)
 		full_err.extend(err/expt)
+		bjd_save.append(bjds)
+
+		full_relflux.extend(relflux)
+		#full_corr_relflux.extend(corr_relflux)
+
+		if full_reg is None:
+			full_reg = regressors
+		else:
+			full_reg = np.concatenate((full_reg, regressors), axis=1) 
+
+	# convert from lists to arrays
+	full_bjd = np.array(full_bjd)
+	full_flux = np.array(full_flux)
+	full_err = np.array(full_err)
+
+	full_relflux = np.array(full_relflux)
+	#full_corr_relflux = np.array(full_corr_relflux)
+
+	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_relflux#, full_corr_relflux
+
+
+def make_raw_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radius): 
+# JGM JAN42023: DO NOT USE WITH mearth_style. This does NOT divide the flux by exposure time, and lets user choose aperture radius.
+
+	# arrays to hold the full dataset
+	full_bjd = []
+	full_flux = []
+	full_err = []
+	full_reg = None
+
+	full_relflux = []
+	#full_corr_relflux = [] 
+
+	# array to hold individual nights
+	bjd_save = []
+	lcfolderlist = np.sort(glob.glob(mainpath+"/**/"+targetname))
+	lcdatelist = [lcfolderlist[ind].split("/")[4] for ind in range(len(lcfolderlist))] 
+
+	for ii,lcfolder in enumerate(lcfolderlist):
+		print("Processing", lcdatelist[ii])
+
+		# if date excluded, skip
+		if np.any(exclude_dates == lcdatelist[ii]):
+			print ("{} :  Excluded".format(lcdatelist[ii]))
+			continue
+
+		# read the .csv file
+		try:
+			df, optimal_lc = return_dataframe_onedate_forapradius(mainpath,targetname,lcdatelist[ii],ffname,ap_radius)
+		except TypeError:
+			continue
+
+		bjds = df['BJD TDB'].to_numpy()
+		flux = df['Target Source-Sky ADU']
+		err = df['Target Source-Sky Error ADU']
+		expt = df['Exposure Time']
+		
+		relflux = df['Target Relative Flux']
+		#corr_relflux = df['Target Post-Processed Normalized Flux']
+
+		print ('{} cadences'.format(len(bjds)))
+
+		# get the comparison fluxes.
+		comps = {}
+		for comp_num in complist:
+			try:
+				comps[comp_num] = df['Ref '+str(comp_num)+' Source-Sky ADU'] / expt  # divide by exposure time since it can vary between nights
+			except:
+				print("Error with comp", str(comp_num))
+				continue
+
+		# make a list of all the comps
+		regressors = []
+		for key in comps.keys():
+			regressors.append(comps[key])
+		regressors = np.array(regressors)
+
+		# add this night of data to the full data set
+		full_bjd.extend(bjds)
+		full_flux.extend(flux)
+		full_err.extend(err)
 		bjd_save.append(bjds)
 
 		full_relflux.extend(relflux)
