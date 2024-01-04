@@ -18,7 +18,8 @@ from celerite2.theano import terms, GaussianProcess
 
 import test_load_data as ld
 from test_mearth_style_for_tierras import mearth_style
-from test_bin_lc import ep_bin 
+from test_bin_lc import ep_bin
+import test_locatemoon_givenmjd as moon
 
 # Define site characteristics. Currently hard-coded for Tierras.
 latitude = 31.680889 * palpy.DD2R #radians
@@ -77,15 +78,31 @@ err = (err/mu) * 1e3
 medians_per_night = []
 binned_medians_per_night = []
 
-fig, ax = plt.subplots(1, N, sharey='row', sharex=True, figsize=(30, 4))
+fig, ax = plt.subplots(1, len(lcdatelist), sharey='row', sharex=True, figsize=(30, 4))
 
-# loop through each night to 
+# loop through data to exclude nights that are fully masked from lcdatelist
 for nth_night in range(len(lcdatelist)):
 	# get the indices corresponding to a given night
 	use_bjds = np.array(bjd_save[nth_night])
 	inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
+	print (lcdatelist[nth_night],len(inds))
+
 	if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
+		print ('made it')
+		date_mask2 = ~np.isin(lcdatelist,lcdatelist[nth_night])
+		lcdatelist = lcdatelist[date_mask2]
+
+# loop through each night to plot data
+for nth_night in range(len(lcdatelist)):
+	# get the indices corresponding to a given night
+	use_bjds = np.array(bjd_save[nth_night])
+	inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
+	print (lcdatelist[nth_night],len(inds))
+
+	if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
+		print ('made it to continue')
 		continue
+
 	else:
 
 		# identify and plot the night of data
@@ -109,9 +126,12 @@ for nth_night in range(len(lcdatelist)):
 
 		# add title and moon info
 		date = lcdatelist[nth_night]
-		moonsep, moonillum = get_moon_sep_and_illum(target_gaiaid, date, latitude, longitude, height)
+		moonsep, moonillum = moon.get_moon_sep_and_illum(gaia_id, date, latitude, longitude, height)
 		moonsep, moonillum = np.round(moonsep,1), np.round(moonillum,1)
-		ax[nth_night].text(0.95,0.95,'{} deg, {}%'.format(moonsep,moonillum))
+		text_string1 = '{:.0f} deg'.format(moonsep)
+		text_string2 = '{:.0f} %'.format(moonillum)
+		ax[nth_night].text(0.95,0.95,text_string1, transform = ax[nth_night].transAxes,fontsize=8, verticalalignment='top',horizontalalignment='right')
+		ax[nth_night].text(0.95,0.90,text_string2, transform = ax[nth_night].transAxes,fontsize=8, verticalalignment='top',horizontalalignment='right')
 		ax[nth_night].set_title(lcdatelist[nth_night])
 
 # format the plot
