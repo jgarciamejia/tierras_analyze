@@ -78,22 +78,35 @@ err = (err/mu) * 1e3
 medians_per_night = []
 binned_medians_per_night = []
 
-fig, ax = plt.subplots(1, len(lcdatelist), sharey='row', sharex=True, figsize=(30, 4))
+fully_masked_inds = []
+fully_masked_dates = []
 
-# loop through data to exclude nights that are fully masked from lcdatelist
+# if the entire night was masked due to bad weather, remove from lcdatelist so a plot is not made for it 
 for nth_night in range(len(lcdatelist)):
 	# get the indices corresponding to a given night
 	use_bjds = np.array(bjd_save[nth_night])
 	inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
-	print (lcdatelist[nth_night],len(inds))
+	#print (lcdatelist[nth_night],len(inds))
 
 	if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
-		print ('made it')
-		date_mask2 = ~np.isin(lcdatelist,lcdatelist[nth_night])
-		lcdatelist = lcdatelist[date_mask2]
+		#print ('made it')
+		fully_masked_inds.append(nth_night)
+		fully_masked_dates.append(lcdatelist[nth_night])
+
+date_mask2 = ~np.isin(lcdatelist,fully_masked_dates)
+lcdatelist = lcdatelist[date_mask2]
+
+# remove fully masked nights from bjd_save to not screw up plot indexing below
+for ind in sorted(fully_masked_inds,reverse=True):
+	bjd_save.pop(ind)
 
 # plot data of each night not excluded by user and where data survived clean up:
+fig, ax = plt.subplots(1, len(lcdatelist), sharey='row', sharex=True, figsize=(30, 4))
+
 for nth_night in range(len(lcdatelist)):
+	# get the indices corresponding to a given night. have to keep repeat loop to correctly index bjd_save
+	use_bjds = np.array(bjd_save[nth_night])
+	inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
 
 	# identify and plot the night of data
 	bjd_plot = x[inds]
@@ -102,7 +115,7 @@ for nth_night in range(len(lcdatelist)):
 	err_plot = err[inds]
 	markers, caps, bars = ax[nth_night].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
 	[bar.set_alpha(0.05) for bar in bars]
-	ax[nth_night].scatter((median_bjd-np.min(bjd_plot))*24, median_flux, s=70,color='white', edgecolor='black', marker='*', alpha=1.0, zorder=10)
+	#ax[nth_night].scatter((median_bjd-np.min(bjd_plot))*24, median_flux, s=70,color='white', edgecolor='black', marker='*', alpha=1.0, zorder=10)
 
 	# add bins
 	tbin = 20  # bin size in minutes
