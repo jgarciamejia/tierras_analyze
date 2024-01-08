@@ -2,6 +2,7 @@ import os
 import sys
 import pdb
 import glob
+import copy
 import argparse 
 import importlib
 import numpy as np
@@ -9,18 +10,19 @@ import pandas as pd
 from time import time
 import matplotlib.pylab as plt
 from astropy.timeseries import LombScargle
+from scipy.stats import sigmaclip
 
 import pymc3 as pm 
 import pymc3_ext as pmx 
 from celerite2.theano import terms, GaussianProcess 
 
 import test_load_data as ld
-from test_mearth_style_for_tierras import mearth_style, mearth_style_pat
+from test_mearth_style_for_tierras_pat import mearth_style, mearth_style_pat
 from test_find_rotation_period import build_model, sigma_clip
 from test_bin_lc import ep_bin 
-from corrected_flux_plot import corrected_flux_plot
+from corrected_flux_plot import reference_flux_correction
 
-# Contributors (so far): JIrwin, EPass, JGarciaMejia.
+# Contributors (so far): JIrwin, EPass, JGarciaMejia, PTamburo.
 
 # Deal with command line
 ap = argparse.ArgumentParser()
@@ -58,22 +60,82 @@ targpath = os.path.join(basepath, 'targets')
 refdf_path = os.path.join(targpath, f'{target}/{target}_target_and_ref_stars.csv')
 refdf = pd.read_csv(refdf_path)
 
+
 # load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
 compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
 
-mask = ~np.isin(complist,exclude_comps)
-complist = complist[mask]
-
 # Load raw target and reference fluxes into global lists
 full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
 
-# mask bad data and use comps to calculate frame-by-frame magnitude zero points
-#x, y, err = mearth_style(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
-x, y, err, masked_reg, cs, c_unc = mearth_style_pat(full_bjd, full_flux, full_err, full_reg) #TO DO: how to integrate weights into mearth_style?
-resfig, resax, binned_fluxes = corrected_flux_plot(x, masked_reg, cs) #Returns an n_comp_star x n_nights array of medians of corrected flux
+# Use the reference stars to calculate the zero-point offsets. 
+# Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
+# Identify outliers and drop them. 
+# Repeat the calcluation until no new outliers are found.
+count = 0 
+while True:
+    # Update the mask with any comp stars identified as outliers
+    mask = ~np.isin(complist,exclude_comps)
+
+    # Drop flagged comp stars from the full regressor array
+    full_reg_loop = copy.deepcopy(full_reg)[mask]
+
+    # mask bad data and use comps to calculate frame-by-frame magnitude zero points
+    x, y, err, masked_reg, cs, c_unc = mearth_style_pat(full_bjd, full_flux, full_err, full_reg_loop) #TO DO: how to integrate weights into mearth_style?
+    binned_fluxes = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flux
+
+    # ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
+    # bp_rps = np.array(refdf['bp_rp'][1:][mask])
+    # G_mags = np.array(refdf['G'][1:][mask])
+
+    # detector_half = np.zeros(len(mask), dtype='int')
+    # for i in range(len(ref_dists)):
+    #     if refdf['y'][i+1] > 1023:
+    #         detector_half[i] = 1
+    # detector_half = detector_half[mask]
+
+    # plt.figure()
+    # colors = ['tab:blue', 'tab:orange']
+    # stddevs = np.std(binned_fluxes, axis=1)*1e3
+    # for i in range(len(ref_dists)):
+    #     plt.scatter(ref_dists[i], stddevs[i], color=colors[detector_half[i]])
+    # plt.xlabel('Ref. Dist. from Targ.', fontsize=16)
+    # plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+    # plt.tick_params(labelsize=14)
+    # plt.tight_layout()
+    
+    #Use the stddevs of the binned fluxes to determine which references to drop
+    stddevs = np.std(binned_fluxes, axis=1)
+    v, l, h = sigmaclip(stddevs, 3, 3)
+
+    # If it's the first loop, instantiate the exclude_comps array by finding the indices of those that lie outside the range identified by sigmaclip
+    if count == 0:
+        exclude_comps = np.where((stddevs<l)|(stddevs>h))[0] + 1
+        #plt.scatter(ref_dists[exclude_comps-1], 1e3*stddevs[exclude_comps-1], color='r', marker='x', s=75)
+
+    # If it's a subsequent loop, we append those indices to the already-existing list of bad comp stars
+    else:
+        exclude_comps = np.sort(np.append(exclude_comps, np.where((stddevs<l)|(stddevs>h))[0] + 1).astype('int'))
+
+        # If the list of comp stars to be excluded matches the one from the previous loop, break
+        # Alternatively, break if the number of iterations reaches the length of the number of stars in the complist. This protects against getting into an infinite loop.
+        if (np.array_equal(exclude_comps, exclude_comps_old)) or (count > len(complist)):
+            print('Converged!')
+            break
+    
+    print(f'Excluding references {exclude_comps}')
+    exclude_comps_old = copy.deepcopy(exclude_comps)
+    count += 1
+
+complist = compfname_df['Reference'].to_numpy()
+complist = np.array([int(s.split()[-1]) for s in complist])
+mask = ~np.isin(complist,exclude_comps)
+
+# Generate the corrected flux figure
+resfig, resax, binned_fluxes = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=True) 
+
 
 ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
 bp_rps = np.array(refdf['bp_rp'][1:][mask])
@@ -115,13 +177,13 @@ plt.tick_params(labelsize=14)
 plt.tight_layout()
 
 plt.figure()
-for i in range(len(complist)):
+for i in range(len(binned_fluxes)):
     plt.hist(binned_fluxes[i])
     plt.xlabel('Median flux', fontsize=16)
     plt.ylabel('N$_{nights}$', fontsize=16)
 #plt.title(f'Ref {complist[i]}')
-breakpoint()
 #pdb.set_trace()
+breakpoint()
 
 ################################################################################################
 ###### TO DO: fix this plotting loop to be readable (for large N it becomes quite unruly) ######
