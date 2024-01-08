@@ -57,6 +57,7 @@ def return_dataframe_onedate(mainpath,targetname,obsdate,ffname): #JGM MODIFIED 
 def return_dataframe_onedate_forapradius(mainpath,targetname,obsdate,ffname,ap_radius='optimal'): #JGM MODIFIED JAN3/2024: return dataframe for a user-defined aperture.
         if ap_radius == 'optimal': # simply use optimal radius according to ap_phot. Needs work. 
                 df,lc_fname = return_dataframe_onedate(mainpath,targetname,obsdate,ffname)
+                print('Optimal ap radius: ',lc_fname.split('_')[-1].split('.csv')[0])
                 return df,lc_fname
         else:
                 datepath = os.path.join(mainpath,obsdate,targetname,ffname)
@@ -119,7 +120,6 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		
 		relflux = df['Target Relative Flux']
 		#corr_relflux = df['Target Post-Processed Normalized Flux']
-
 		print ('{} cadences'.format(len(bjds)))
 
 		# get the comparison fluxes.
