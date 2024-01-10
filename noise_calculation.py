@@ -87,7 +87,7 @@ if __name__ == '__main__':
             target_raw_flux = target_raw_flux[use_inds]
             norm = np.median(target_rel_flux)
             target_rel_flux /= norm
-            stddev = np.nanstd(target_rel_flux)*np.sqrt(native_exptime/plot_exptime)*1e6 #JGM mod
+            stddev = np.nanstd(target_rel_flux)*np.sqrt(np.nanmedian(native_exptime)/plot_exptime)*1e6 #JGM mod
             ax.plot(np.mean(target_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
             for k in range(n_refs):
                 ref_rel_flux = np.array(df[f'Ref {k+1} Relative Flux'])
@@ -98,6 +98,6 @@ if __name__ == '__main__':
                 ref_raw_flux = ref_raw_flux[use_inds]
                 norm = np.median(ref_rel_flux)
                 ref_rel_flux /= norm
-                stddev = np.nanstd(ref_rel_flux)*np.sqrt(native_exptime/plot_exptime)*1e6 #JGM mod
+                stddev = np.nanstd(ref_rel_flux)*np.sqrt(np.nanmedian(native_exptime)/plot_exptime)*1e6 #JGM mod
                 ax.plot(np.mean(ref_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
     breakpoint()
