@@ -52,7 +52,8 @@ def noise_component_plot(ap_rad=10, exp_time=30, sky=100):
     return fig, ax 
 
 if __name__ == '__main__':
-    fig, ax = noise_component_plot()
+    plot_exptime = 30 #seconds #JGM add
+    fig, ax = noise_component_plot(exp_time=plot_exptime)
     targets = glob.glob('/data/tierras/targets/*')
     for i in range(len(targets)):
         target = targets[i].split('/')[-1]
@@ -79,13 +80,14 @@ if __name__ == '__main__':
             n_refs = int(df.keys()[-1].split(' ')[1])
             target_rel_flux = np.array(df['Target Relative Flux'])
             target_raw_flux = np.array(df['Target Source-Sky e'])
+            native_exptime = np.array(df['Exposure Time'])
             v, l, h = sigmaclip(target_rel_flux)
             use_inds = np.where((target_rel_flux>l)&(target_rel_flux<h))[0]
             target_rel_flux = target_rel_flux[use_inds]
             target_raw_flux = target_raw_flux[use_inds]
             norm = np.median(target_rel_flux)
             target_rel_flux /= norm
-            stddev = np.nanstd(target_rel_flux)*1e6
+            stddev = np.nanstd(target_rel_flux)*np.sqrt(native_exptime/plot_exptime)*1e6 #JGM mod
             ax.plot(np.mean(target_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
             for k in range(n_refs):
                 ref_rel_flux = np.array(df[f'Ref {k+1} Relative Flux'])
@@ -96,6 +98,6 @@ if __name__ == '__main__':
                 ref_raw_flux = ref_raw_flux[use_inds]
                 norm = np.median(ref_rel_flux)
                 ref_rel_flux /= norm
-                stddev = np.nanstd(ref_rel_flux)*1e6
+                stddev = np.nanstd(ref_rel_flux)*np.sqrt(native_exptime/plot_exptime)*1e6 #JGM mod
                 ax.plot(np.mean(ref_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
     breakpoint()
