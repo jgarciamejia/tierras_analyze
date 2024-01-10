@@ -33,7 +33,8 @@ def noise_component_plot(ap_rad=10, exp_time=30, sky=100):
     #ax.plot(source_photon_counts, dc_noise*conversion, label='Dark current')
     ax.plot(source_photon_counts, noise_floor*conversion, label='Noise floor', ls='--')
     ax.plot(source_photon_counts, total_noise*conversion, label='Total noise', lw=2)
-
+    ax.scatter([6474629],[393], label='M3.5V, photon noise',marker="*",s=20,color='purple',zorder=5) #JGM add
+    ax.scatter([248507],[2006], label='M7V, photon noise',marker="*",s=20,color='pink',zorder=5) #JGM add
     ax.legend()
     ax.set_xscale('log')
     ax.set_yscale('log')
@@ -48,11 +49,12 @@ def noise_component_plot(ap_rad=10, exp_time=30, sky=100):
         ax.set_ylabel('$\sigma$', fontsize=16)
     ax.set_ylim(80,1e6)
     ax.set_xlim(max(source_photon_counts),min(source_photon_counts))
+    ax.set_title("exp_time = {}".format(exp_time)) #JGMadd
     plt.tight_layout()
     return fig, ax 
 
 if __name__ == '__main__':
-    plot_exptime = 30 #seconds #JGM add
+    plot_exptime = 60 #seconds #JGM add
     fig, ax = noise_component_plot(exp_time=plot_exptime)
     targets = glob.glob('/data/tierras/targets/*')
     for i in range(len(targets)):
