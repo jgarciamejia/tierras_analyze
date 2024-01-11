@@ -1,6 +1,7 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 plt.ion()
+from matplotlib import colors 
 import glob 
 import pandas as pd
 from scipy.stats import sigmaclip
@@ -52,8 +53,10 @@ def noise_component_plot(ap_rad=10, exp_time=30, sky=100):
     return fig, ax 
 
 if __name__ == '__main__':
-    fig, ax = noise_component_plot()
+    fig, ax = noise_component_plot(ap_rad=6)
     targets = glob.glob('/data/tierras/targets/*')
+    mean_fluxes = []
+    stddevs = []
     for i in range(len(targets)):
         target = targets[i].split('/')[-1]
         dates = glob.glob(f'/data/tierras/lightcurves/**/{target}')
@@ -65,11 +68,13 @@ if __name__ == '__main__':
                 if os.path.exists(optimal_lc_path):
                     with open(optimal_lc_path) as f:
                         path = f.readline()
+                    ref_weights = pd.read_csv(f'/data/tierras/lightcurves/{date}/{target}/flat0000/night_weights.csv')
                 else:
                     optimal_lc_path = f'/data/tierras/lightcurves/{date}/{target}/flat000/optimal_lc.txt'
                     if os.path.exists(optimal_lc_path):
                         with open(optimal_lc_path) as f:
                             path = f.readline()
+                        ref_weights = pd.read_csv(f'/data/tierras/lightcurves/{date}/{target}/flat0000/night_weights.csv')
                     else:
                         print(f'No optimal output for {target} on {date}, skipping.')
                         continue
@@ -85,9 +90,13 @@ if __name__ == '__main__':
             target_raw_flux = target_raw_flux[use_inds]
             norm = np.median(target_rel_flux)
             target_rel_flux /= norm
+            mean_fluxes.append(np.nanmean(target_raw_flux))
             stddev = np.nanstd(target_rel_flux)*1e6
+            stddevs.append(stddev)
             ax.plot(np.mean(target_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
             for k in range(n_refs):
+                if ref_weights['Weight'][k] <= 1e-7:
+                    continue
                 ref_rel_flux = np.array(df[f'Ref {k+1} Relative Flux'])
                 ref_raw_flux = np.array(df[f'Ref {k+1} Source-Sky e'])
                 v, l, h = sigmaclip(ref_rel_flux)
@@ -96,6 +105,19 @@ if __name__ == '__main__':
                 ref_raw_flux = ref_raw_flux[use_inds]
                 norm = np.median(ref_rel_flux)
                 ref_rel_flux /= norm
+                mean_fluxes.append(np.nanmean(ref_raw_flux))
                 stddev = np.nanstd(ref_rel_flux)*1e6
-                ax.plot(np.mean(ref_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
+                stddevs.append(stddev)
+    
+    mean_fluxes = np.array(mean_fluxes)
+    stddevs = np.array(stddevs)
+    use_inds = np.where(~np.isnan(stddevs))[0]
+    h2d = ax.hist2d(mean_fluxes[use_inds], stddevs[use_inds], bins=[np.logspace(4, 7.5, 100), np.logspace(2,5,75)], cmin=2, norm=colors.PowerNorm(0.5), zorder=3, alpha=1, lw=0)
+
+    ax.plot(mean_fluxes[use_inds], stddevs[use_inds], '.', color='k', ls='', alpha=0.4, ms=3, zorder=0)
+    cb = fig.colorbar(h2d[3], ax=ax, pad=0.02, label='N$_{light curves}$')
+    ax.invert_xaxis()
+    plt.tight_layout()
+    breakpoint()
+
     breakpoint()
