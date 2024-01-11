@@ -60,8 +60,7 @@ targpath = os.path.join(basepath, 'targets')
 refdf_path = os.path.join(targpath, f'{target}/{target}_target_and_ref_stars.csv')
 refdf = pd.read_csv(refdf_path)
 
-
-# load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
+# load the list of comparison stars to use. 
 compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
 compfname_df = pd.read_csv(compfname)
 complist = compfname_df['Reference'].to_numpy()
@@ -83,7 +82,7 @@ while True:
     full_reg_loop = copy.deepcopy(full_reg)[mask]
 
     # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-    x, y, err, masked_reg, cs, c_unc = mearth_style_pat(full_bjd, full_flux, full_err, full_reg_loop) #TO DO: how to integrate weights into mearth_style?
+    x, y, err, masked_reg, cs, c_unc = mearth_style_pat(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop) #TO DO: how to integrate weights into mearth_style?
     binned_fluxes = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flux
 
     # ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
