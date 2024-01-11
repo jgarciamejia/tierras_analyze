@@ -65,4 +65,4 @@ def reference_flux_correction(bjds, regressors, cs, complist, plot=False):
         ax[1,-1].legend(loc='center left', bbox_to_anchor=(1, 1), ncol=2)
         plt.tight_layout()
         plt.subplots_adjust(hspace=0,wspace=0)
-        return fig, ax, binned_flux
+        return fig, ax, binned_flux, regressors_adj_norm
