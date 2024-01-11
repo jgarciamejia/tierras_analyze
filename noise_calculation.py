@@ -1,7 +1,10 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 plt.ion()
+<<<<<<< HEAD
 from matplotlib import colors 
+=======
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
 import glob 
 import pandas as pd
 from scipy.stats import sigmaclip
@@ -34,7 +37,12 @@ def noise_component_plot(ap_rad=10, exp_time=30, sky=100):
     #ax.plot(source_photon_counts, dc_noise*conversion, label='Dark current')
     ax.plot(source_photon_counts, noise_floor*conversion, label='Noise floor', ls='--')
     ax.plot(source_photon_counts, total_noise*conversion, label='Total noise', lw=2)
+<<<<<<< HEAD
 
+=======
+    ax.scatter([6474629],[393], label='M3.5V, photon noise',marker="*",s=20,color='purple',zorder=5) #JGM add
+    ax.scatter([248507],[2006], label='M7V, photon noise',marker="*",s=20,color='pink',zorder=5) #JGM add
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
     ax.legend()
     ax.set_xscale('log')
     ax.set_yscale('log')
@@ -49,14 +57,24 @@ def noise_component_plot(ap_rad=10, exp_time=30, sky=100):
         ax.set_ylabel('$\sigma$', fontsize=16)
     ax.set_ylim(80,1e6)
     ax.set_xlim(max(source_photon_counts),min(source_photon_counts))
+<<<<<<< HEAD
+=======
+    ax.set_title("exp_time = {}".format(exp_time)) #JGMadd
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
     plt.tight_layout()
     return fig, ax 
 
 if __name__ == '__main__':
+<<<<<<< HEAD
     fig, ax = noise_component_plot(ap_rad=6)
     targets = glob.glob('/data/tierras/targets/*')
     mean_fluxes = []
     stddevs = []
+=======
+    plot_exptime = 60 #seconds #JGM add
+    fig, ax = noise_component_plot(exp_time=plot_exptime)
+    targets = glob.glob('/data/tierras/targets/*')
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
     for i in range(len(targets)):
         target = targets[i].split('/')[-1]
         dates = glob.glob(f'/data/tierras/lightcurves/**/{target}')
@@ -68,13 +86,19 @@ if __name__ == '__main__':
                 if os.path.exists(optimal_lc_path):
                     with open(optimal_lc_path) as f:
                         path = f.readline()
+<<<<<<< HEAD
                     ref_weights = pd.read_csv(f'/data/tierras/lightcurves/{date}/{target}/flat0000/night_weights.csv')
+=======
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
                 else:
                     optimal_lc_path = f'/data/tierras/lightcurves/{date}/{target}/flat000/optimal_lc.txt'
                     if os.path.exists(optimal_lc_path):
                         with open(optimal_lc_path) as f:
                             path = f.readline()
+<<<<<<< HEAD
                         ref_weights = pd.read_csv(f'/data/tierras/lightcurves/{date}/{target}/flat0000/night_weights.csv')
+=======
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
                     else:
                         print(f'No optimal output for {target} on {date}, skipping.')
                         continue
@@ -84,12 +108,17 @@ if __name__ == '__main__':
             n_refs = int(df.keys()[-1].split(' ')[1])
             target_rel_flux = np.array(df['Target Relative Flux'])
             target_raw_flux = np.array(df['Target Source-Sky e'])
+<<<<<<< HEAD
+=======
+            native_exptime = np.array(df['Exposure Time'])
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
             v, l, h = sigmaclip(target_rel_flux)
             use_inds = np.where((target_rel_flux>l)&(target_rel_flux<h))[0]
             target_rel_flux = target_rel_flux[use_inds]
             target_raw_flux = target_raw_flux[use_inds]
             norm = np.median(target_rel_flux)
             target_rel_flux /= norm
+<<<<<<< HEAD
             mean_fluxes.append(np.nanmean(target_raw_flux))
             stddev = np.nanstd(target_rel_flux)*1e6
             stddevs.append(stddev)
@@ -97,6 +126,11 @@ if __name__ == '__main__':
             for k in range(n_refs):
                 if ref_weights['Weight'][k] <= 1e-7:
                     continue
+=======
+            stddev = np.nanstd(target_rel_flux)*np.sqrt(np.nanmedian(native_exptime)/plot_exptime)*1e6 #JGM mod
+            ax.plot(np.mean(target_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
+            for k in range(n_refs):
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
                 ref_rel_flux = np.array(df[f'Ref {k+1} Relative Flux'])
                 ref_raw_flux = np.array(df[f'Ref {k+1} Source-Sky e'])
                 v, l, h = sigmaclip(ref_rel_flux)
@@ -105,6 +139,7 @@ if __name__ == '__main__':
                 ref_raw_flux = ref_raw_flux[use_inds]
                 norm = np.median(ref_rel_flux)
                 ref_rel_flux /= norm
+<<<<<<< HEAD
                 mean_fluxes.append(np.nanmean(ref_raw_flux))
                 stddev = np.nanstd(ref_rel_flux)*1e6
                 stddevs.append(stddev)
@@ -121,3 +156,8 @@ if __name__ == '__main__':
     breakpoint()
 
     breakpoint()
+=======
+                stddev = np.nanstd(ref_rel_flux)*np.sqrt(np.nanmedian(native_exptime)/plot_exptime)*1e6 #JGM mod
+                ax.plot(np.mean(ref_raw_flux), stddev, '.', color='k', ls='', alpha=0.4, ms=3)
+    breakpoint()
+>>>>>>> 47ad2ad3c857890cc83fc66df6f68653c76876ec
