@@ -134,7 +134,7 @@ complist = np.array([int(s.split()[-1]) for s in complist])
 mask = ~np.isin(complist,exclude_comps)
 
 # Generate the corrected flux figure
-resfig, resax, binned_fluxes = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=True) 
+resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=True) 
 
 
 ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
@@ -167,6 +167,17 @@ plt.ylabel('$\sigma$ (ppt)', fontsize=16)
 plt.tick_params(labelsize=14)
 plt.tight_layout()
 
+# Note: this plotting the stddev of the corrected ref stars across their whole time series, NOT the stddev of the medians.
+plt.figure()
+ref_source_minus_sky = np.nanmedian(masked_reg, axis=1)
+ref_stddevs = np.nanstd(masked_reg_corr,axis=1)
+for i in range(len(ref_source_minus_sky)):
+    plt.scatter(ref_source_minus_sky[i], ref_stddevs[i], color=colors[detector_half[i]])
+plt.xlabel('Median flux (ADU)', fontsize=16)
+plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+plt.tick_params(labelsize=14)
+plt.tight_layout()
+
 plt.figure()
 for i in range(len(ref_dists)):
     plt.scatter(G_mags[i], stddevs[i], color=colors[detector_half[i]])
@@ -189,10 +200,11 @@ breakpoint()
 ###### TO DO: fix this plotting loop to be readable (for large N it becomes quite unruly) ######
 # plot the data night-by-night
 # initialize the pplot
-try:
-    N = len(lcfolderlist) - len(exclude_dates) #N can be set to lower value for testing/inspection on individual nights. N should be = len(lcfolderlist)-len(exclude_dates) 
-except TypeError:
-    N = len(lcfolderlist)
+# try:
+#     N = len(lcfolderlist) - len(exclude_dates) #N can be set to lower value for testing/inspection on individual nights. N should be = len(lcfolderlist)-len(exclude_dates) 
+# except TypeError:
+#     N = len(lcfolderlist)
+N = len(bjd_save)
 
 fig, ax = plt.subplots(2, N, sharey='row', sharex=True, figsize=(30, 4))
 
