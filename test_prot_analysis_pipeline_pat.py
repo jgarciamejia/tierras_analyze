@@ -21,6 +21,7 @@ from test_mearth_style_for_tierras_pat import mearth_style, mearth_style_pat
 from test_find_rotation_period import build_model, sigma_clip
 from test_bin_lc import ep_bin 
 from corrected_flux_plot import reference_flux_correction
+from noise_calculation import noise_component_plot 
 
 # Contributors (so far): JIrwin, EPass, JGarciaMejia, PTamburo.
 
@@ -68,7 +69,7 @@ complist = compfname_df['Reference'].to_numpy()
 complist = np.array([int(s.split()[-1]) for s in complist])
 
 # Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
 
 # Use the reference stars to calculate the zero-point offsets. 
 # Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
@@ -83,7 +84,7 @@ while True:
     full_reg_loop = copy.deepcopy(full_reg)[mask]
 
     # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-    x, y, err, masked_reg, cs, c_unc = mearth_style_pat(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop) #TO DO: how to integrate weights into mearth_style?
+    x, y, err, masked_reg, cs, c_unc, exp_times, skies = mearth_style_pat(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
     binned_fluxes = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flux
 
     # ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
@@ -194,6 +195,14 @@ for i in range(len(binned_fluxes)):
     plt.ylabel('N$_{nights}$', fontsize=16)
 #plt.title(f'Ref {complist[i]}')
 #pdb.set_trace()
+
+GAIN = 5.9
+effective_exp_time = np.median(exp_times) # Use the median exposure time to estimate the expected noise level across the data set
+effective_sky = np.median(skies*GAIN) # Do the same thing for sky background. 'skies' are already a rate in ADU/s (see make_global_lists), just need to multiply by GAIN
+fig, ax = noise_component_plot(ap_rad=12, exp_time=effective_exp_time, sky_rate=effective_sky)
+avg_source_fluxes = np.nanmedian(GAIN*masked_reg*10**(cs/(-2.5)),axis=1)
+source_stddevs = np.nanstd(masked_reg_corr, axis=1)*1e6
+ax.plot(avg_source_fluxes, source_stddevs, 'k.')
 breakpoint()
 
 ################################################################################################
