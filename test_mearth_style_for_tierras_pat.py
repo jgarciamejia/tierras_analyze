@@ -68,7 +68,7 @@ def mearth_style(bjds, flux, err, regressors):
 
     return bjds, flux, err
 
-def mearth_style_pat(bjds, flux, err, regressors):
+def mearth_style_pat(bjds, flux, err, regressors, exp_times, skies):
 
     """ Use the comparison stars to derive a frame-by-frame zero-point magnitude. Also filter and mask bad cadences """
     """ it's called "mearth_style" because it's inspired by the mearth pipeline """
@@ -85,6 +85,8 @@ def mearth_style_pat(bjds, flux, err, regressors):
     flux = flux[mask]
     err = err[mask]
     bjds = bjds[mask]
+    exp_times = exp_times[mask]
+    skies = skies[mask]
 
     tot_regressor = np.sum(regressors, axis=0)  # the total regressor flux at each time point = sum of comp star fluxes in each exposure
     c0s = -2.5*np.log10(np.nanpercentile(tot_regressor, 90)/tot_regressor)  # initial guess of magnitude zero points
@@ -97,6 +99,8 @@ def mearth_style_pat(bjds, flux, err, regressors):
     flux = flux[mask]
     err = err[mask]
     bjds = bjds[mask]
+    exp_times = exp_times[mask]
+    skies = skies[mask]
 
     # repeat the cs estimate now that we've masked out the bad cadences
     phot_regressor = np.nanpercentile(regressors, 90, axis=1)  # estimate photometric flux level for each star
@@ -122,10 +126,12 @@ def mearth_style_pat(bjds, flux, err, regressors):
     cs = cs[mask]
     c_unc = c_unc[mask]
     regressors = regressors[:,mask]
+    exp_times = exp_times[mask]
+    skies = skies[mask]
 
     # flux_original = copy.deepcopy(flux)
     err = 10**(cs/(-2.5)) * np.sqrt(err**2 + (c_unc*flux*np.log(10)/(-2.5))**2)  # propagate error
     flux *= 10**(cs/(-2.5))  # adjust the flux based on the calculated zero points
 
 
-    return bjds, flux, err, regressors, cs, c_unc
+    return bjds, flux, err, regressors, cs, c_unc, exp_times, skies

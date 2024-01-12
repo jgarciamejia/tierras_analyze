@@ -92,6 +92,8 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 	full_reg = None
 
 	full_relflux = []
+	full_exptime = []
+	full_sky = []
 	#full_corr_relflux = [] 
 
 	# array to hold individual nights
@@ -117,6 +119,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		flux = df['Target Source-Sky ADU']
 		err = df['Target Source-Sky Error ADU']
 		expt = df['Exposure Time']
+		sky = df['Target Sky ADU']
 		
 		relflux = df['Target Relative Flux']
 		#corr_relflux = df['Target Post-Processed Normalized Flux']
@@ -146,6 +149,8 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		bjd_save.append(bjds)
 
 		full_relflux.extend(relflux)
+		full_exptime.extend(expt)
+		full_sky.extend(sky/expt)
 		#full_corr_relflux.extend(corr_relflux)
 
 		if full_reg is None:
@@ -160,9 +165,11 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 	full_flux_div_expt = np.array(full_flux_div_expt)
 	full_err_div_expt =np.array(full_err_div_expt)
 	full_relflux = np.array(full_relflux)
+	full_exptime = np.array(full_exptime)
+	full_sky = np.array(full_sky)
 	#full_corr_relflux = np.array(full_corr_relflux)
 
-	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux#, full_corr_relflux
+	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky #, full_corr_relflux
 
 def make_global_lists_refastarget(ref_as_target,mainpath,targetname,ffname,exclude_dates,complist,ap_radius='optimal'): #JGM: Jan 4, 2024. 
 	# arrays to hold the full dataset
