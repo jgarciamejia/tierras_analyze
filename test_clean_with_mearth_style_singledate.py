@@ -54,6 +54,7 @@ complist = complist[mask & mask2]
 
 
 # Load raw target and reference fluxes into global lists
+exclude_dates=None
 full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius='optimal')
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
@@ -72,7 +73,7 @@ y = y / mu
 
 # Plot/compare original data to corrected data 
 
-fig, ax = plt.subplots(1,1, sharey='row', figsize=(5*nnights, 5))
+fig, ax = plt.subplots(1,1, sharey='row', figsize=(10, 50))
 
 # get the indices corresponding to the nth_night
 use_bjds = np.array(bjd_save[0])
@@ -85,18 +86,14 @@ night_bjd = full_bjd[original_inds]
 night_relflux = norm_relflux[original_inds]
 ax.scatter(night_bjd-full_bjd[0],night_relflux,color='black',s=2,label='Relative Flux (ap_phot.py)')
 
-# identify and plot the corrected data for the nth_night
-if len(corr_inds) == 0:  # if the entire nth_night was masked due to bad weather, don't plot anything
-    continue
-else:
-    corrected_bjd = x[corr_inds]
-    corrected_relflux = y[corr_inds]
-    ax.scatter(corrected_bjd-full_bjd[0], corrected_relflux,color='purple', s=2, label='Zero-pt-corrected Flux (mearth_style_for_tierras.py)')
-    ax.set_title(lcdatelist[nth_night])
+corrected_bjd = x[corr_inds]
+corrected_relflux = y[corr_inds]
+ax.scatter(corrected_bjd-full_bjd[0], corrected_relflux,color='purple', s=2, label='Zero-pt-corrected Flux (mearth_style_for_tierras.py)')
+ax.set_title('{}'.format(lcfolderlist[0]))
 
-ax[0].set_ylabel('Median-Normalized Relative Flux')
+ax.set_ylabel('Median-Normalized Relative Flux')
 fig.text(0.5, 0.01, 'BJD TDB - {}'.format(str(np.round(full_bjd[0],2))), ha='center')
-ax[0].set_ylim(np.nanpercentile(y, 1)-.01, np.nanpercentile(y, 99)+.01)  # don't let outliers wreck the y-axis scale
+ax.set_ylim(np.nanpercentile(y, 1)-.01, np.nanpercentile(y, 99)+.01)  # don't let outliers wreck the y-axis scale
 fig.suptitle(target)
 plt.legend()
 plt.subplots_adjust(wspace=0, hspace=0)
