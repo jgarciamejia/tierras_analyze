@@ -90,6 +90,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 	full_flux_div_expt = [] # sometimes data from one star has different exposure times in a given night or between nights
 	full_err_div_expt = []
 	full_reg = None
+	full_reg_err = None
 
 	full_relflux = []
 	full_exptime = []
@@ -127,18 +128,23 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 
 		# get the comparison fluxes.
 		comps = {}
+		comps_err = {}
 		for comp_num in complist:
 			try:
 				comps[comp_num] = df['Ref '+str(comp_num)+' Source-Sky ADU'] / expt  # divide by exposure time since it can vary between nights
+				comps_err[comp_num] = df['Ref '+str(comp_num)+' Source-Sky Error ADU'] / expt
 			except:
 				print("Error with comp", str(comp_num))
 				continue
 
 		# make a list of all the comps
 		regressors = []
+		regressors_err = []
 		for key in comps.keys():
 			regressors.append(comps[key])
+			regressors_err.append(comps_err[key])
 		regressors = np.array(regressors)
+		regressors_err = np.array(regressors_err)
 
 		# add this night of data to the full data set
 		full_bjd.extend(bjds)
@@ -157,11 +163,17 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 			full_reg = regressors
 		else:
 			full_reg = np.concatenate((full_reg, regressors), axis=1) 
+		
+		if full_reg_err is None:
+			full_reg_err = regressors_err
+		else:
+			full_reg_err = np.concatenate((full_reg_err, regressors_err), axis=1)
 
 	# convert from lists to arrays
 	full_bjd = np.array(full_bjd)
 	full_flux = np.array(full_flux)
 	full_err = np.array(full_err)
+	full_reg_err = np.array(full_reg_err)
 	full_flux_div_expt = np.array(full_flux_div_expt)
 	full_err_div_expt =np.array(full_err_div_expt)
 	full_relflux = np.array(full_relflux)
@@ -169,7 +181,7 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 	full_sky = np.array(full_sky)
 	#full_corr_relflux = np.array(full_corr_relflux)
 
-	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky #, full_corr_relflux
+	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky #, full_corr_relflux
 
 def make_global_lists_refastarget(ref_as_target,mainpath,targetname,ffname,exclude_dates,complist,ap_radius='optimal'): #JGM: Jan 4, 2024. 
 	# arrays to hold the full dataset

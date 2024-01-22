@@ -10,6 +10,7 @@ import pandas as pd
 from time import time
 import matplotlib.pylab as plt
 from astropy.timeseries import LombScargle
+from astropy.time import Time
 from scipy.stats import sigmaclip
 
 import pymc3 as pm 
@@ -63,13 +64,15 @@ refdf = pd.read_csv(refdf_path)
 
 
 # load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
-compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
-compfname_df = pd.read_csv(compfname)
-complist = compfname_df['Reference'].to_numpy()
-complist = np.array([int(s.split()[-1]) for s in complist])
+# compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
+# compfname_df = pd.read_csv(compfname)
+# complist = compfname_df['Reference'].to_numpy()
+# complist = np.array([int(s.split()[-1]) for s in complist])
+complist = np.arange(len(refdf)-1)+1
 
 # Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+
 
 # Use the reference stars to calculate the zero-point offsets. 
 # Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
@@ -82,10 +85,12 @@ while True:
 
     # Drop flagged comp stars from the full regressor array
     full_reg_loop = copy.deepcopy(full_reg)[mask]
+    full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 
     # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-    x, y, err, masked_reg, cs, c_unc, exp_times, skies = mearth_style_pat(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
-    binned_fluxes = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flux
+    x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies = mearth_style_pat(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
+
+    binned_fluxes = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flux
 
     # ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
     # bp_rps = np.array(refdf['bp_rp'][1:][mask])
@@ -113,12 +118,11 @@ while True:
 
     # If it's the first loop, instantiate the exclude_comps array by finding the indices of those that lie outside the range identified by sigmaclip
     if count == 0:
-        exclude_comps = np.where((stddevs<l)|(stddevs>h))[0] + 1
-        #plt.scatter(ref_dists[exclude_comps-1], 1e3*stddevs[exclude_comps-1], color='r', marker='x', s=75)
+        exclude_comps = np.where((stddevs>h))[0] + 1 # Does sigma-clipping and also an absolute cut on the night-to-night stddevs of median fluxes: use the best 20%. 
 
     # If it's a subsequent loop, we append those indices to the already-existing list of bad comp stars
     else:
-        exclude_comps = np.sort(np.append(exclude_comps, np.where((stddevs<l)|(stddevs>h))[0] + 1).astype('int'))
+        exclude_comps = np.unique(np.sort(np.append(exclude_comps, np.where((stddevs>h))[0] + 1).astype('int')))
 
         # If the list of comp stars to be excluded matches the one from the previous loop, break
         # Alternatively, break if the number of iterations reaches the length of the number of stars in the complist. This protects against getting into an infinite loop.
@@ -130,14 +134,16 @@ while True:
     exclude_comps_old = copy.deepcopy(exclude_comps)
     count += 1
 
-complist = compfname_df['Reference'].to_numpy()
-complist = np.array([int(s.split()[-1]) for s in complist])
+# complist = compfname_df['Reference'].to_numpy()
+# complist = np.array([int(s.split()[-1]) for s in complist])
+complist = np.arange(len(refdf)-1)+1
+
 mask = ~np.isin(complist,exclude_comps)
 
 # Generate the corrected flux figure
-resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, masked_reg, cs, complist[mask], plot=True) 
+resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], plot=True) 
 
-
+breakpoint()
 ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
 bp_rps = np.array(refdf['bp_rp'][1:][mask])
 G_mags = np.array(refdf['G'][1:][mask])
@@ -199,11 +205,17 @@ for i in range(len(binned_fluxes)):
 GAIN = 5.9
 effective_exp_time = np.median(exp_times) # Use the median exposure time to estimate the expected noise level across the data set
 effective_sky = np.median(skies*GAIN) # Do the same thing for sky background. 'skies' are already a rate in ADU/s (see make_global_lists), just need to multiply by GAIN
-fig, ax = noise_component_plot(ap_rad=12, exp_time=effective_exp_time, sky_rate=effective_sky)
-avg_source_fluxes = np.nanmedian(GAIN*masked_reg*10**(cs/(-2.5)),axis=1)
-source_stddevs = np.nanstd(masked_reg_corr, axis=1)*1e6
-ax.plot(avg_source_fluxes, source_stddevs, 'k.')
-breakpoint()
+fig, ax = noise_component_plot(ap_rad=12, exp_time=effective_exp_time, sky_rate=effective_sky, airmass=1.4)
+#avg_source_fluxes = np.nanmedian(GAIN*masked_reg*10**(cs/(-2.5)),axis=1)
+#source_stddevs = np.nanstd(masked_reg_corr, axis=1)*1e6
+#ax.plot(avg_source_fluxes, source_stddevs, 'k.')
+for ii in range(len(masked_reg_corr)):
+    for jj in range(len(bjd_save)):
+        use_bjds = np.array(bjd_save[jj])
+        inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
+        avg_flux = np.nanmedian(GAIN*masked_reg[ii, inds]*10**(cs[inds]/(-2.5)))
+        stddev = np.nanstd(masked_reg_corr[ii, inds]*1e6)
+        ax.plot(avg_flux, stddev, 'k.')
 
 ################################################################################################
 ###### TO DO: fix this plotting loop to be readable (for large N it becomes quite unruly) ######
@@ -216,7 +228,11 @@ breakpoint()
 N = len(bjd_save)
 
 fig, ax = plt.subplots(2, N, sharey='row', sharex=True, figsize=(30, 4))
-
+target_binned_fluxes = np.zeros(N)
+colors = []
+cmap = plt.get_cmap('viridis')
+colors.extend(cmap((255*np.arange(len(x))/len(x)).astype('int')))
+colors = np.array(colors)
 for ii in range(N):
    # get the indices corresponding to a given night
    use_bjds = np.array(bjd_save[ii])
@@ -228,9 +244,32 @@ for ii in range(N):
        bjd_plot = x[inds]
        flux_plot = y[inds]
        err_plot = err[inds]
-       markers, caps, bars = ax[0, ii].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, fmt='k.', alpha=0.2)
-       [bar.set_alpha(0.05) for bar in bars]
+       color_inds = colors[inds]
 
+       #markers, caps, bars = ax[0, ii].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, marker='.', ls='', color=cmap(color_ind), alpha=0.2)
+       ax[0, ii].scatter((bjd_plot-np.min(bjd_plot))*24., flux_plot, marker='.', color=color_inds, alpha=0.2)
+
+       # Generate the date label for the top of the plot 
+       ut_date = Time(bjd_plot[-1],format='jd',scale='tdb').iso.split(' ')[0]
+       date_label = ut_date.split('-')[1].lstrip('0')+'/'+ut_date.split('-')[2].lstrip('0')+'/'+ut_date[2:4]
+       ax[0, ii].set_title(date_label, rotation=45, fontsize=8)
+       #[bar.set_alpha(0.05) for bar in bars]
+       target_binned_fluxes[ii] = np.median(flux_plot)
+
+target_binned_fluxes = target_binned_fluxes[target_binned_fluxes != 0] 
+target_binned_fluxes /= np.median(target_binned_fluxes) # Calculate the median normalized target fluxes on each night after the zero-points have been applied
+
+# Add the median target flux stddevs to some plots from earlier
+plt.figure(2) 
+plt.plot(0, np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
+
+plt.figure(3)
+plt.plot(refdf['bp_rp'][0], np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
+
+plt.figure(5)
+plt.plot(refdf['G'][0], np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
+
+plt.figure(8)
 # format the plot
 fig.text(0.5, 0.01, 'hours since start of night', ha='center')
 ax[0, 0].set_ylabel('corrected flux')
@@ -292,11 +331,19 @@ for var in map_soln.keys():
 t_lc_pred = np.linspace(x.min(), x.max(), 10000)  # times at which we're going to plot
 
 # get the light curve associated with the maximum a posteriori model
+# QUESTION: why is map_soln['mean_lc'] subtracted off the models here (and not added to the spota calculation)? The full spot model should be mean_lc + 1e3*spota(t)
+# with model:
+#     gp_pred = (pmx.eval_in_model(extras["gp_lc_pred"], map_soln) + map_soln["mean_lc"])
+#     lc = (pmx.eval_in_model(extras["model_lc"](t_lc_pred), map_soln) - map_soln["mean_lc"])
+#     lc_obs = (pmx.eval_in_model(extras["model_lc"](x), map_soln) - map_soln["mean_lc"])
+#     spota = 1e3 * pmx.eval_in_model(extras["spota"](t_lc_pred), map_soln)
+
+# Added by PT, I think this is what the model should actually be
 with model:
     gp_pred = (pmx.eval_in_model(extras["gp_lc_pred"], map_soln) + map_soln["mean_lc"])
-    lc = (pmx.eval_in_model(extras["model_lc"](t_lc_pred), map_soln) - map_soln["mean_lc"])
-    lc_obs = (pmx.eval_in_model(extras["model_lc"](x), map_soln) - map_soln["mean_lc"])
-    spota = 1e3 * pmx.eval_in_model(extras["spota"](t_lc_pred), map_soln)
+    lc = pmx.eval_in_model(extras["model_lc"](t_lc_pred), map_soln) 
+    lc_obs = pmx.eval_in_model(extras["model_lc"](x), map_soln) 
+    spota = 1e3 * pmx.eval_in_model(extras["spota"](t_lc_pred), map_soln) + map_soln['mean_lc']
 
 # arrays to store residuals
 all_res = []
@@ -316,24 +363,25 @@ for ii in range(N):
         bjd_plot = x[inds]
         flux_plot = y[inds]
         err_plot = err[inds]
-        lc_plot = lc_obs[inds]
+        lc_plot = lc_obs[inds] 
+        color_inds = colors[inds]
 
     xlim = ax[0, ii].get_xlim()  # remember the x-axis limits so we don't mess them up
 
     # plot the model fit
-    ax[0, ii].plot((t_lc_pred - np.min(use_bjds))*24., (lc/1e3 + 1)*mu, color="C2", lw=1, zorder=10)
-
+    ax[0, ii].plot((t_lc_pred - np.min(use_bjds))*24., (lc/1e3 + 1)*mu, color="r", lw=1, zorder=10)
     # add bins
     tbin = 20  # bin size in minutes
     xs_b, binned, e_binned = ep_bin((bjd_plot - np.min(bjd_plot))*24, (flux_plot/1e3+1)*mu, tbin/60.)
     _, binned_res, e_binned_res = ep_bin((bjd_plot - np.min(bjd_plot))*24, flux_plot-lc_plot, tbin/60.)
-    marker, caps, bars = ax[0, ii].errorbar(xs_b, binned, yerr=e_binned, color='purple', fmt='.', alpha=0.5, zorder=5)
+    marker, caps, bars = ax[0, ii].errorbar(xs_b, binned, yerr=e_binned, mfc='w', mec='k', mew=1, ecolor='k', fmt='.', alpha=0.7, zorder=5)
     [bar.set_alpha(0.3) for bar in bars]
 
     # plot the residuals
-    markers, caps, bars = ax[1, ii].errorbar((bjd_plot - np.min(bjd_plot))*24., flux_plot - lc_plot, yerr=err_plot, fmt='k.', alpha=0.2)
-    [bar.set_alpha(0.05) for bar in bars]
-    markers, caps, bars = ax[1, ii].errorbar(xs_b, binned_res, yerr=e_binned_res, color='purple', fmt='.', alpha=0.5, zorder=5)
+    #markers, caps, bars = ax[1, ii].errorbar((bjd_plot - np.min(bjd_plot))*24., flux_plot - lc_plot, yerr=err_plot, fmt='k.', alpha=0.2)
+    ax[1,ii].scatter((bjd_plot - np.min(bjd_plot))*24., flux_plot - lc_plot, marker='.', color=color_inds, alpha=0.2)
+    #[bar.set_alpha(0.05) for bar in bars]
+    markers, caps, bars = ax[1, ii].errorbar(xs_b, binned_res, yerr=e_binned_res, mfc='w', mec='k', mew=1, ecolor='k', fmt='.', alpha=0.7, zorder=5)
     [bar.set_alpha(0.3) for bar in bars]
     ax[1, ii].axhline(0, linestyle='dashed', color='k')
 
@@ -353,8 +401,8 @@ all_res_bin = np.array(all_res_bin)
 ax[1, 0].set_ylabel("O-C [ppt]")
 ax[1, 0].set_ylim(np.nanpercentile(all_res, 1), np.nanpercentile(all_res, 99))  # don't let outliers wreck the y-axis scale
 
-print("RMS model:", np.round(np.sqrt(np.nanmedian(all_res**2))*1e3, 2), "ppm")
-print("Binned RMS model:", np.round(np.sqrt(np.nanmedian(all_res_bin**2))*1e3, 2), "ppm in", tbin, "minute bins")
+print("RMS model:", np.round(np.sqrt(np.nanmean(all_res**2))*1e3, 2), "ppm")
+print("Binned RMS model:", np.round(np.sqrt(np.nanmean(all_res_bin**2))*1e3, 2), "ppm in", tbin, "minute bins")
 
 #pdb.set_trace()
 
@@ -371,6 +419,12 @@ x_phased1 = (extras["x"] % period1) / period1
 x_phased = (t_lc_pred % period1) / period1
 y1 = extras['y']
 
+# Color-code by x
+colors_phase = []
+inds_ = np.arange(len(extras['x']))
+colors_phase.extend(cmap(((255*inds_)/len(inds_)).astype('int')))
+colors_phase = np.array(colors_phase)
+
 # bin the data into 100 bins that are evenly spaced in phase
 bins = np.linspace(0, 1, 101)
 sort1 = np.argsort(x_phased1)
@@ -379,6 +433,7 @@ sort = np.argsort(x_phased)
 x_phased = x_phased[sort]
 y1 = y1[sort1]
 spota = spota[sort]
+colors_phase = colors_phase[sort1]
 binned1 = []
 for ii in range(100):
     use_inds = np.where((x_phased1 < bins[ii + 1]) & (x_phased1 > bins[ii]))[0]
@@ -387,9 +442,10 @@ for ii in range(100):
 #pdb.set_trace()
 
 # plot the phased data
-ax1.plot(x_phased1, y1, "k.", alpha=0.2)
+#ax1.plot(x_phased1, y1, "k.", alpha=0.2)
+ax1.scatter(x_phased1, y1, marker='.', color=colors_phase, alpha=0.2)
 ax1.plot(x_phased, spota, 'r', lw=1, zorder=10)
-ax1.plot(bins[:-1] + (bins[1] - bins[0]) / 2., binned1, 'go', alpha=0.5)
+ax1.plot(bins[:-1] + (bins[1] - bins[0]) / 2., binned1, marker='o', mfc='w', mec='k', mew=2,  alpha=0.7, ls='')
 
 # I wanted this to adjust the y-axis to an appropriate scale automatically, but you may still need to play around with
 # ylim_N depending on how noisy the data is.
