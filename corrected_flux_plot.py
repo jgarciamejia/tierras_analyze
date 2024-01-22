@@ -7,7 +7,7 @@ plt.ion()
 import copy 
 from astropy.time import Time 
 
-def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, cs_unc, complist, plot=False):
+def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, cs_unc, complist, weights, plot=False):
     regressors_adj = np.zeros_like(regressors) #Adjust the regressor fluxes by cs
     regressors_adj_norm = np.zeros_like(regressors)
     regressors_adj_err = np.zeros_like(regressors)
@@ -67,7 +67,7 @@ def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, c
                 ax[1,jj].plot(plot_times, regressors_adj_norm[ii][date_inds[jj]], marker=marker, ls='' ,color=color, alpha=0.5, mec='none', zorder=0)
                 mean_bjd = np.mean(plot_times)
                 if jj == len(date_inds)-1:
-                    ax[1,jj].plot(mean_bjd+random_offsets[ii], binned_flux[ii,jj], marker=marker,color=color, mec='k', mew=1.5, zorder=1,label=f'Ref {complist[ii]}', ls='', ms=10)
+                    ax[1,jj].plot(mean_bjd+random_offsets[ii], binned_flux[ii,jj], marker=marker,color=color, mec='k', mew=1.5, zorder=1,label=f'R{complist[ii]}, {100*weights[ii]:.1f}%', ls='', ms=10)
                 else:
                     ax[1,jj].plot(mean_bjd+random_offsets[ii], binned_flux[ii,jj], marker=marker,color=color, mec='k', mew=1.5, zorder=1, ls='', ms=10)
 
@@ -86,5 +86,6 @@ def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, c
 
         ax[1,-1].legend(loc='center left', bbox_to_anchor=(1, 1), ncol=2)
         plt.tight_layout()
-        plt.subplots_adjust(hspace=0,wspace=0)
+        plt.subplots_adjust(left=0.04,right=0.8,hspace=0,wspace=0)
+        breakpoint()
         return fig, ax, binned_flux, regressors_adj_norm
