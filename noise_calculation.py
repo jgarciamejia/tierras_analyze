@@ -8,7 +8,7 @@ from scipy.stats import sigmaclip
 import os 
 from ap_phot import tierras_binner 
 
-def noise_component_plot(ap_rad=10, exp_time=180, sky_rate=700):
+def noise_component_plot(ap_rad=10, exp_time=180, sky_rate=100, airmass=1.4):
     conversion = 1e6 # 1e3 for ppt, 1e6 for ppm 
     
     n_pix = np.pi*ap_rad**2
@@ -23,15 +23,12 @@ def noise_component_plot(ap_rad=10, exp_time=180, sky_rate=700):
     source_photon_noise = np.sqrt(source_photon_counts)/source_photon_counts
     sky_photon_noise = np.sqrt(sky_photon_counts)/source_photon_counts
     noise_floor_ppm = 250*np.sqrt(5*60/exp_time)
-    noise_floor = noise_floor_ppm/1e6 / exp_time * source_photon_counts/source_photon_counts
+    noise_floor = noise_floor_ppm/1e6 * source_photon_counts/source_photon_counts
 
-    total_noise = (np.sqrt(source_photon_counts + sky_photon_counts) + noise_floor*exp_time*source_photon_counts) /source_photon_counts
+    scintillation_noise = 0.09*(130)**(-2/3)*airmass**(7/4)*(2*exp_time)**(-1/2)*np.exp(-2306/8000)
 
-    # source_photon_counts = np.logspace(np.log10(1e2),np.log10(1e7),1000)
+    total_noise = (np.sqrt(source_photon_counts + sky_photon_counts + (noise_floor*source_photon_counts)**2 + (scintillation_noise*source_photon_counts)**2)) /source_photon_counts
 
-    # sky_photon_counts = sky*n_pix
-    # source_photon_noise = np.sqrt(source_photon_counts/exp_time) / source_photon_counts
-    # sky_photon_noise = np.sqrt(sky_photon_counts/exp_time) / source_photon_counts
     # read_noise = np.sqrt((np.zeros_like(source_photon_counts) + n_pix * READ_NOISE**2)) / source_photon_counts
     # dc_noise = np.sqrt((np.zeros_like(source_photon_counts) + n_pix * DARK_CURRENT * exp_time)) / source_photon_counts
     # pwv_noise = (np.zeros_like(source_photon_counts) + 250/1e6) / source_photon_counts
@@ -47,7 +44,8 @@ def noise_component_plot(ap_rad=10, exp_time=180, sky_rate=700):
     ax.plot(source_photon_count_rates, sky_photon_noise*conversion, label=f'Sky ({sky_rate:.1f} phot./pix/s)', ls='--')
     #ax.plot(source_photon_counts, read_noise*conversion, label='Read noise')
     #ax.plot(source_photon_counts, dc_noise*conversion, label='Dark current')
-    ax.plot(source_photon_count_rates, noise_floor*exp_time*conversion, label=f'{noise_floor_ppm:.1f}-ppm noise floor', ls='--')
+    ax.plot(source_photon_count_rates, noise_floor*conversion, label=f'{noise_floor_ppm:.1f}-ppm noise floor', ls='--')
+    ax.plot(source_photon_count_rates, np.zeros_like(source_photon_count_rates)+scintillation_noise*conversion, label=f'Scintillation', ls='--')
     ax.plot(source_photon_count_rates, total_noise*conversion, label='Total noise', lw=2)
     #ax.scatter([6474629],[393], label='M3.5V, photon noise',marker="*",s=60,color='purple',zorder=5) #JGM add
     #ax.scatter([248507],[2006], label='M7V, photon noise',marker="*",s=60,color='magenta',zorder=5) #JGM add

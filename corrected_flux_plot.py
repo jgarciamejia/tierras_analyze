@@ -5,15 +5,22 @@ from glob import glob
 import matplotlib.pyplot as plt
 plt.ion()
 import copy 
+from astropy.time import Time 
 
-def reference_flux_correction(bjds, regressors, cs, complist, plot=False):
+def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, cs_unc, complist, plot=False):
     regressors_adj = np.zeros_like(regressors) #Adjust the regressor fluxes by cs
     regressors_adj_norm = np.zeros_like(regressors)
+    regressors_adj_err = np.zeros_like(regressors)
+    regressors_adj_err_norm = np.zeros_like(regressors)
     for ii in range(regressors.shape[0]):
         regressors_adj[ii,:] = regressors[ii,:]*10**(cs/(-2.5))
         regressors_adj_norm[ii,:] = regressors_adj[ii,:] / np.nanmean(regressors_adj[ii,:]) #Create normalized adjusted fluxes
-    
-    #Figure out which indices correspond to which date by checking the spacing between exposure times
+        regressors_adj_err[ii,:] = np.sqrt((10**(-0.4*cs)*regressors_err[ii,:])**2 + (-0.921034*regressors[ii,:]*np.exp(-0.921034*cs)*cs_unc)**2)
+        # regressors_adj_err[ii,:] = np.sqrt((10**(-0.4*cs)*regressors_err[ii,:])**2)
+        regressors_adj_err_norm[ii,:] = regressors_adj_err[ii,:]/ np.nanmean(regressors_adj[ii,:])
+        # breakpoint()
+
+    #Figure out which indises correspond to which date by checking the spacing between exposure times
     time_deltas = np.array([bjds[i+1]-bjds[i] for i in range(len(bjds)-1)])
     date_ends = bjds[np.where(time_deltas>0.5)[0]] #If the separation is > half a day, say that that is where the date ends
     date_inds = []
@@ -50,9 +57,12 @@ def reference_flux_correction(bjds, regressors, cs, complist, plot=False):
 
             for jj in range(len(date_inds)):
                 plot_times = bjds[date_inds[jj]]
+                ut_date = Time(plot_times[-1],format='jd',scale='tdb').iso.split(' ')[0]
+                date_label = ut_date.split('-')[1].lstrip('0')+'/'+ut_date.split('-')[2].lstrip('0')+'/'+ut_date[2:4]
                 plot_times -= plot_times[0]
                 plot_times *= 24 
 
+                ax[0,jj].set_title(date_label, rotation=45, fontsize=8)
                 ax[0,jj].plot(plot_times, regressors[ii][date_inds[jj]]/np.mean(regressors[ii]), marker='.', ls='' ,color=color, alpha=0.5, mec='none', zorder=0)
                 ax[1,jj].plot(plot_times, regressors_adj_norm[ii][date_inds[jj]], marker=marker, ls='' ,color=color, alpha=0.5, mec='none', zorder=0)
                 mean_bjd = np.mean(plot_times)
@@ -62,6 +72,18 @@ def reference_flux_correction(bjds, regressors, cs, complist, plot=False):
                     ax[1,jj].plot(mean_bjd+random_offsets[ii], binned_flux[ii,jj], marker=marker,color=color, mec='k', mew=1.5, zorder=1, ls='', ms=10)
 
             #plt.plot(bjds, flux/np.mean(flux), marker='.', ls='', label='Target')
+        
+        # # Plot the corrected target_flux 
+        # targ_flux /= np.median(targ_flux)
+        # for jj in range(len(date_inds)):
+        #     plot_times = bjds[date_inds[jj]]
+        #     plot_times -= plot_times[0]
+        #     plot_times *= 24 
+        #     plot_times = np.mean(plot_times)
+        #     mean_flux = np.mean(targ_flux[date_inds[jj]])
+        #     ax[1,jj].plot(plot_times,mean_flux, marker='o', mfc='w', mec='k', mew=2, alpha=1, zorder=5, ms=8)
+        # breakpoint()
+
         ax[1,-1].legend(loc='center left', bbox_to_anchor=(1, 1), ncol=2)
         plt.tight_layout()
         plt.subplots_adjust(hspace=0,wspace=0)
