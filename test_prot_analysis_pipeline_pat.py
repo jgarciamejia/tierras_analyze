@@ -18,7 +18,7 @@ import pymc3_ext as pmx
 from celerite2.theano import terms, GaussianProcess 
 
 import test_load_data as ld
-from test_mearth_style_for_tierras_pat import mearth_style, mearth_style_pat
+from test_mearth_style_for_tierras_pat import mearth_style, mearth_style_pat, mearth_style_pat_weighted
 from test_find_rotation_period import build_model, sigma_clip
 from test_bin_lc import ep_bin 
 from corrected_flux_plot import reference_flux_correction
@@ -78,70 +78,58 @@ full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_e
 # Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
 # Identify outliers and drop them. 
 # Repeat the calcluation until no new outliers are found.
-count = 0 
-while True:
-    # Update the mask with any comp stars identified as outliers
-    mask = ~np.isin(complist,exclude_comps)
 
-    # Drop flagged comp stars from the full regressor array
-    full_reg_loop = copy.deepcopy(full_reg)[mask]
-    full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
+# ORIGINAL ITERATIVE PROCEDURE
+# count = 0 
+# while True:
+#     # Update the mask with any comp stars identified as outliers
+#     mask = ~np.isin(complist,exclude_comps)
 
-    # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-    x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies = mearth_style_pat(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
+#     # Drop flagged comp stars from the full regressor array
+#     full_reg_loop = copy.deepcopy(full_reg)[mask]
+#     full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 
-    binned_fluxes = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flux
+#     # mask bad data and use comps to calculate frame-by-frame magnitude zero points
+#     x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
 
-    # ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
-    # bp_rps = np.array(refdf['bp_rp'][1:][mask])
-    # G_mags = np.array(refdf['G'][1:][mask])
-
-    # detector_half = np.zeros(len(mask), dtype='int')
-    # for i in range(len(ref_dists)):
-    #     if refdf['y'][i+1] > 1023:
-    #         detector_half[i] = 1
-    # detector_half = detector_half[mask]
-
-    # plt.figure()
-    # colors = ['tab:blue', 'tab:orange']
-    # stddevs = np.std(binned_fluxes, axis=1)*1e3
-    # for i in range(len(ref_dists)):
-    #     plt.scatter(ref_dists[i], stddevs[i], color=colors[detector_half[i]])
-    # plt.xlabel('Ref. Dist. from Targ.', fontsize=16)
-    # plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-    # plt.tick_params(labelsize=14)
-    # plt.tight_layout()
+#     binned_fluxes = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flu
     
-    #Use the stddevs of the binned fluxes to determine which references to drop
-    stddevs = np.std(binned_fluxes, axis=1)
-    v, l, h = sigmaclip(stddevs, 3, 3)
+#     #Use the stddevs of the binned fluxes to determine which references to drop
+#     stddevs = np.std(binned_fluxes, axis=1)
+#     v, l, h = sigmaclip(stddevs, 3, 3)
 
-    # If it's the first loop, instantiate the exclude_comps array by finding the indices of those that lie outside the range identified by sigmaclip
-    if count == 0:
-        exclude_comps = np.where((stddevs>h))[0] + 1 # Does sigma-clipping and also an absolute cut on the night-to-night stddevs of median fluxes: use the best 20%. 
+#     # If it's the first loop, instantiate the exclude_comps array by finding the indices of those that lie outside the range identified by sigmaclip
+#     if count == 0:
+#         exclude_comps = np.where((stddevs>h))[0] + 1 # Does sigma-clipping and also an absolute cut on the night-to-night stddevs of median fluxes: use the best 20%. 
 
-    # If it's a subsequent loop, we append those indices to the already-existing list of bad comp stars
-    else:
-        exclude_comps = np.unique(np.sort(np.append(exclude_comps, np.where((stddevs>h))[0] + 1).astype('int')))
+#     # If it's a subsequent loop, we append those indices to the already-existing list of bad comp stars
+#     else:
+#         exclude_comps = np.unique(np.sort(np.append(exclude_comps, np.where((stddevs>h))[0] + 1).astype('int')))
 
-        # If the list of comp stars to be excluded matches the one from the previous loop, break
-        # Alternatively, break if the number of iterations reaches the length of the number of stars in the complist. This protects against getting into an infinite loop.
-        if (np.array_equal(exclude_comps, exclude_comps_old)) or (count > len(complist)):
-            print('Converged!')
-            break
+#         # If the list of comp stars to be excluded matches the one from the previous loop, break
+#         # Alternatively, break if the number of iterations reaches the length of the number of stars in the complist. This protects against getting into an infinite loop.
+#         if (np.array_equal(exclude_comps, exclude_comps_old)) or (count > len(complist)):
+#             print('Converged!')
+#             break
     
-    print(f'Excluding references {exclude_comps}')
-    exclude_comps_old = copy.deepcopy(exclude_comps)
-    count += 1
+#     print(f'Excluding references {exclude_comps}')
+#     exclude_comps_old = copy.deepcopy(exclude_comps)
+#     count += 1
 
-# complist = compfname_df['Reference'].to_numpy()
-# complist = np.array([int(s.split()[-1]) for s in complist])
-complist = np.arange(len(refdf)-1)+1
-
+# Update the mask with any comp stars identified as outliers
 mask = ~np.isin(complist,exclude_comps)
 
+# Drop flagged comp stars from the full regressor array
+full_reg_loop = copy.deepcopy(full_reg)[mask]
+full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
+
+# mask bad data and use comps to calculate frame-by-frame magnitude zero points
+x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
+
+
+
 # Generate the corrected flux figure
-resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], plot=True) 
+resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], plot=True) 
 
 breakpoint()
 ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
