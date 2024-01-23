@@ -24,6 +24,7 @@ from test_find_rotation_period import build_model, sigma_clip
 from test_bin_lc import ep_bin 
 from corrected_flux_plot import reference_flux_correction
 from noise_calculation import noise_component_plot 
+from median_filter import median_filter_uneven
 
 # Contributors (so far): JIrwin, EPass, JGarciaMejia, PTamburo.
 
@@ -39,6 +40,7 @@ ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if 
 ap.add_argument("-exclude_comps", nargs='*',type=int,help="Comparison stars to exclude, if any. Write the comp/ref number assignments ONLY, separated by a space (e.g., 2 5 7 if you want to exclude references/comps R2,R5, and R7.) ")
 ap.add_argument("-ap_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
 ap.add_argument('-restore', default=False, help='If True, the code will try to restore the global photometry for the target with the selected aperture size.')
+ap.add_argument('-median_filter_w', default=0, help='The width of the median filter (in days) to be applied to the data set. If 0, no filtering will be done.')
 args = ap.parse_args()
 
 target = args.target
@@ -51,6 +53,7 @@ exclude_dates = np.array(args.exclude_dates)
 exclude_comps = np.array(args.exclude_comps)
 ap_radius = args.ap_radius
 restore = bool(args.restore)
+median_filter_w = float(args.median_filter_w)
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
@@ -94,7 +97,6 @@ else:
     # Write the global lists to global_flux_path 
     global_flux_dict = {'BJD':full_bjd, 'BJD List':bjd_save, 'Target Flux': full_flux, 'Target Flux Error':full_err, 'Regressor Fluxes':full_reg, 'Regressor Flux Errors':full_reg_err, 'Target Flux Div Exptime':full_flux_div_expt, 'Target Flux Error Div Exptime':full_err_div_expt, 'Target Relative Flux':full_relflux, 'Exposure Time':full_exptime, 'Sky Background':full_sky}
     pickle.dump(global_flux_dict, open(global_flux_path,'wb'))
-    breakpoint()
 
 # Use the reference stars to calculate the zero-point offsets. 
 # Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
@@ -148,69 +150,79 @@ full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
 
-
-
 # Generate the corrected flux figure
 resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], plot=True) 
 
-breakpoint()
-ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
-bp_rps = np.array(refdf['bp_rp'][1:][mask])
-G_mags = np.array(refdf['G'][1:][mask])
+# Optionally use a median filter to remove long-term trends from the corrected target flux
+if median_filter_w != 0:
+    x_filter, y_filter = median_filter_uneven(x, y, median_filter_w)
+    mu = np.median(y)
 
-detector_half = np.zeros(len(mask), dtype='int')
-for i in range(len(ref_dists)):
-    if refdf['y'][i+1] > 1023:
-        detector_half[i] = 1
-detector_half = detector_half[mask]
+    plt.figure()
+    plt.plot(x,y)
+    plt.plot(x,y_filter)
+    plt.plot(x,mu*y/y_filter)
+    breakpoint()
+    y =  mu*y/(y_filter)
+    
 
-plt.figure()
-colors = ['tab:blue', 'tab:orange']
-stddevs = np.std(binned_fluxes, axis=1)*1e3
-for i in range(len(ref_dists)):
-    plt.scatter(ref_dists[i], stddevs[i], color=colors[detector_half[i]])
+# ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
+# bp_rps = np.array(refdf['bp_rp'][1:][mask])
+# G_mags = np.array(refdf['G'][1:][mask])
 
-plt.xlabel('Ref. Dist. from Targ.', fontsize=16)
-plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-plt.tick_params(labelsize=14)
-plt.tight_layout()
+# detector_half = np.zeros(len(mask), dtype='int')
+# for i in range(len(ref_dists)):
+#     if refdf['y'][i+1] > 1023:
+#         detector_half[i] = 1
+# detector_half = detector_half[mask]
 
-plt.figure()
-for i in range(len(ref_dists)):
-    plt.scatter(bp_rps[i], stddevs[i], color=colors[detector_half[i]])
+# plt.figure()
+# colors = ['tab:blue', 'tab:orange']
+# stddevs = np.std(binned_fluxes, axis=1)*1e3
+# for i in range(len(ref_dists)):
+#     plt.scatter(ref_dists[i], stddevs[i], color=colors[detector_half[i]])
 
-plt.xlabel('B$_p$-R$_p$', fontsize=16)
-plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-plt.tick_params(labelsize=14)
-plt.tight_layout()
+# plt.xlabel('Ref. Dist. from Targ.', fontsize=16)
+# plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+# plt.tick_params(labelsize=14)
+# plt.tight_layout()
 
-# Note: this plotting the stddev of the corrected ref stars across their whole time series, NOT the stddev of the medians.
-plt.figure()
-ref_source_minus_sky = np.nanmedian(masked_reg, axis=1)
-ref_stddevs = np.nanstd(masked_reg_corr,axis=1)
-for i in range(len(ref_source_minus_sky)):
-    plt.scatter(ref_source_minus_sky[i], ref_stddevs[i], color=colors[detector_half[i]])
-plt.xlabel('Median flux (ADU)', fontsize=16)
-plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-plt.tick_params(labelsize=14)
-plt.tight_layout()
+# plt.figure()
+# for i in range(len(ref_dists)):
+#     plt.scatter(bp_rps[i], stddevs[i], color=colors[detector_half[i]])
 
-plt.figure()
-for i in range(len(ref_dists)):
-    plt.scatter(G_mags[i], stddevs[i], color=colors[detector_half[i]])
+# plt.xlabel('B$_p$-R$_p$', fontsize=16)
+# plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+# plt.tick_params(labelsize=14)
+# plt.tight_layout()
 
-plt.xlabel('G mag', fontsize=16)
-plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-plt.tick_params(labelsize=14)
-plt.tight_layout()
+# # Note: this plotting the stddev of the corrected ref stars across their whole time series, NOT the stddev of the medians.
+# plt.figure()
+# ref_source_minus_sky = np.nanmedian(masked_reg, axis=1)
+# ref_stddevs = np.nanstd(masked_reg_corr,axis=1)
+# for i in range(len(ref_source_minus_sky)):
+#     plt.scatter(ref_source_minus_sky[i], ref_stddevs[i], color=colors[detector_half[i]])
+# plt.xlabel('Median flux (ADU)', fontsize=16)
+# plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+# plt.tick_params(labelsize=14)
+# plt.tight_layout()
 
-plt.figure()
-for i in range(len(binned_fluxes)):
-    plt.hist(binned_fluxes[i])
-    plt.xlabel('Median flux', fontsize=16)
-    plt.ylabel('N$_{nights}$', fontsize=16)
-#plt.title(f'Ref {complist[i]}')
-#pdb.set_trace()
+# plt.figure()
+# for i in range(len(ref_dists)):
+#     plt.scatter(G_mags[i], stddevs[i], color=colors[detector_half[i]])
+
+# plt.xlabel('G mag', fontsize=16)
+# plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+# plt.tick_params(labelsize=14)
+# plt.tight_layout()
+
+# plt.figure()
+# for i in range(len(binned_fluxes)):
+#     plt.hist(binned_fluxes[i])
+#     plt.xlabel('Median flux', fontsize=16)
+#     plt.ylabel('N$_{nights}$', fontsize=16)
+# #plt.title(f'Ref {complist[i]}')
+# #pdb.set_trace()
 
 GAIN = 5.9
 effective_exp_time = np.median(exp_times) # Use the median exposure time to estimate the expected noise level across the data set
@@ -269,17 +281,17 @@ for ii in range(N):
 target_binned_fluxes = target_binned_fluxes[target_binned_fluxes != 0] 
 target_binned_fluxes /= np.median(target_binned_fluxes) # Calculate the median normalized target fluxes on each night after the zero-points have been applied
 
-# Add the median target flux stddevs to some plots from earlier
-plt.figure(2) 
-plt.plot(0, np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
+# # Add the median target flux stddevs to some plots from earlier
+# plt.figure(2) 
+# plt.plot(0, np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
 
-plt.figure(3)
-plt.plot(refdf['bp_rp'][0], np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
+# plt.figure(3)
+# plt.plot(refdf['bp_rp'][0], np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
 
-plt.figure(5)
-plt.plot(refdf['G'][0], np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
+# plt.figure(5)
+# plt.plot(refdf['G'][0], np.std(target_binned_fluxes)*1e3, 'r*', ms=10)
 
-plt.figure(8)
+#plt.figure(8)
 # format the plot
 fig.text(0.5, 0.01, 'hours since start of night', ha='center')
 ax[0, 0].set_ylabel('corrected flux')
@@ -445,9 +457,11 @@ y1 = y1[sort1]
 spota = spota[sort]
 colors_phase = colors_phase[sort1]
 binned1 = []
+binned1_std = []
 for ii in range(100):
     use_inds = np.where((x_phased1 < bins[ii + 1]) & (x_phased1 > bins[ii]))[0]
     binned1.append(np.nanmedian(y1[use_inds]))
+    binned1_std.append(np.nanstd(y1[use_inds])/np.sqrt(len(use_inds)))
 
 #pdb.set_trace()
 
@@ -455,7 +469,7 @@ for ii in range(100):
 #ax1.plot(x_phased1, y1, "k.", alpha=0.2)
 ax1.scatter(x_phased1, y1, marker='.', color=colors_phase, alpha=0.2)
 ax1.plot(x_phased, spota, 'r', lw=1, zorder=10)
-ax1.plot(bins[:-1] + (bins[1] - bins[0]) / 2., binned1, marker='o', mfc='w', mec='k', mew=2,  alpha=0.7, ls='')
+ax1.errorbar(bins[:-1] + (bins[1] - bins[0]) / 2., binned1, binned1_std, marker='o', mfc='w', mec='k', mew=2, ecolor='k', alpha=0.7, ls='')
 
 # I wanted this to adjust the y-axis to an appropriate scale automatically, but you may still need to play around with
 # ylim_N depending on how noisy the data is.
