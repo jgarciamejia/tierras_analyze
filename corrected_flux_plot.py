@@ -87,5 +87,4 @@ def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, c
         ax[1,-1].legend(loc='center left', bbox_to_anchor=(1, 1), ncol=2)
         plt.tight_layout()
         plt.subplots_adjust(left=0.04,right=0.8,hspace=0,wspace=0)
-        breakpoint()
         return fig, ax, binned_flux, regressors_adj_norm
