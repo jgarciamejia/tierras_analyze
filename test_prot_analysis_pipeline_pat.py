@@ -12,6 +12,7 @@ import matplotlib.pylab as plt
 from astropy.timeseries import LombScargle
 from astropy.time import Time
 from scipy.stats import sigmaclip
+import pickle 
 
 import pymc3 as pm 
 import pymc3_ext as pmx 
@@ -37,6 +38,7 @@ ap.add_argument("-ls_resolution", required=False, type=int, default=100000, help
 ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if any. Write the dates separated by a space (e.g., 19950119 19901023)")
 ap.add_argument("-exclude_comps", nargs='*',type=int,help="Comparison stars to exclude, if any. Write the comp/ref number assignments ONLY, separated by a space (e.g., 2 5 7 if you want to exclude references/comps R2,R5, and R7.) ")
 ap.add_argument("-ap_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
+ap.add_argument('-restore', default=False, help='If True, the code will try to restore the global photometry for the target with the selected aperture size.')
 args = ap.parse_args()
 
 target = args.target
@@ -48,6 +50,7 @@ ls_resolution = args.ls_resolution
 exclude_dates = np.array(args.exclude_dates)
 exclude_comps = np.array(args.exclude_comps)
 ap_radius = args.ap_radius
+restore = bool(args.restore)
 
 basepath = '/data/tierras/'
 lcpath = os.path.join(basepath,'lightcurves')
@@ -70,9 +73,28 @@ refdf = pd.read_csv(refdf_path)
 # complist = np.array([int(s.split()[-1]) for s in complist])
 complist = np.arange(len(refdf)-1)+1
 
-# Load raw target and reference fluxes into global lists
-full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
-
+global_flux_path = targpath+f'/{target}/global_uncorrected_circular_fixed_ap_phot_{ap_radius}.csv'
+if restore and os.path.exists(global_flux_path):
+    res = pickle.load(open(global_flux_path,'rb'))
+    full_bjd = res['BJD']
+    bjd_save = res['BJD List']
+    full_flux = res['Target Flux']
+    full_err = res['Target Flux Error']
+    full_reg = res['Regressor Fluxes']
+    full_reg_err = res['Regressor Flux Errors']
+    full_flux_div_expt = res['Target Flux Div Exptime']
+    full_err_div_expt = res['Target Flux Error Div Exptime']
+    full_relflux = res['Target Relative Flux']
+    full_exptime = res['Exposure Time']
+    full_sky = res['Sky Background']
+else:
+    # Load raw target and reference fluxes into global lists
+    full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+    
+    # Write the global lists to global_flux_path 
+    global_flux_dict = {'BJD':full_bjd, 'BJD List':bjd_save, 'Target Flux': full_flux, 'Target Flux Error':full_err, 'Regressor Fluxes':full_reg, 'Regressor Flux Errors':full_reg_err, 'Target Flux Div Exptime':full_flux_div_expt, 'Target Flux Error Div Exptime':full_err_div_expt, 'Target Relative Flux':full_relflux, 'Exposure Time':full_exptime, 'Sky Background':full_sky}
+    pickle.dump(global_flux_dict, open(global_flux_path,'wb'))
+    breakpoint()
 
 # Use the reference stars to calculate the zero-point offsets. 
 # Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
