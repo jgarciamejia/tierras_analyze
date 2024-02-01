@@ -138,7 +138,7 @@ def mearth_style_pat(bjds, flux, err, regressors, regressors_err, exp_times, ski
 
     return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies
 
-def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_times, skies):
+def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_times, skies, x_pos, y_pos, airmass, fwhm):
 
     """ Use the comparison stars to derive a frame-by-frame zero-point magnitude. Also filter and mask bad cadences """
     """ it's called "mearth_style" because it's inspired by the mearth pipeline """
@@ -158,6 +158,10 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     bjds = bjds[mask]
     exp_times = exp_times[mask]
     skies = skies[mask]
+    x_pos = x_pos[mask]
+    y_pos = y_pos[mask]
+    airmass = airmass[mask]
+    fwhm = fwhm[mask]
 
     tot_regressor = np.sum(regressors, axis=0)  # the total regressor flux at each time point = sum of comp star fluxes in each exposure
     c0s = -2.5*np.log10(np.nanpercentile(tot_regressor, 90)/tot_regressor)  # initial guess of magnitude zero points
@@ -172,6 +176,10 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     bjds = bjds[mask]
     exp_times = exp_times[mask]
     skies = skies[mask]
+    x_pos = x_pos[mask]
+    y_pos = y_pos[mask]
+    airmass = airmass[mask]
+    fwhm = fwhm[mask]
 
     # repeat the cs estimate now that we've masked out the bad cadences
     phot_regressor = np.nanpercentile(regressors, 90, axis=1)  # estimate photometric flux level for each star
@@ -208,6 +216,10 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     regressors_err = regressors_err[:, mask]
     exp_times = exp_times[mask]
     skies = skies[mask]
+    x_pos = x_pos[mask]
+    y_pos = y_pos[mask]
+    airmass = airmass[mask]
+    fwhm = fwhm[mask]
 
     cs_original = cs
     delta_weights = np.zeros(len(regressors))+999 # initialize
@@ -248,4 +260,4 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     flux *= 10**(cs/(-2.5))  #cs, adjust the flux based on the calculated zero points
 
 
-    return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies, weights
+    return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm

@@ -95,6 +95,10 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 	full_relflux = []
 	full_exptime = []
 	full_sky = []
+	full_x = []
+	full_y = []
+	full_airmass = []
+	full_fwhm = []
 	#full_corr_relflux = [] 
 
 	# array to hold individual nights
@@ -121,6 +125,10 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		err = df['Target Source-Sky Error ADU']
 		expt = df['Exposure Time']
 		sky = df['Target Sky ADU']
+		x = df['Target X']
+		y = df['Target Y']
+		airmass = df['Airmass']
+		fwhm = np.nanmean([df['Target X FWHM Arcsec'],df['Target Y FWHM Arcsec']],axis=0)
 		
 		relflux = df['Target Relative Flux']
 		#corr_relflux = df['Target Post-Processed Normalized Flux']
@@ -157,6 +165,10 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		full_relflux.extend(relflux)
 		full_exptime.extend(expt)
 		full_sky.extend(sky/expt)
+		full_x.extend(x)
+		full_y.extend(y)
+		full_airmass.extend(airmass)
+		full_fwhm.extend(fwhm)
 		#full_corr_relflux.extend(corr_relflux)
 
 		if full_reg is None:
@@ -179,9 +191,13 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 	full_relflux = np.array(full_relflux)
 	full_exptime = np.array(full_exptime)
 	full_sky = np.array(full_sky)
+	full_x = np.array(full_x)
+	full_y = np.array(full_y)
+	full_airmass = np.array(full_airmass)
+	full_fwhm = np.array(full_fwhm)
 	#full_corr_relflux = np.array(full_corr_relflux)
 
-	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky #, full_corr_relflux
+	return full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky, full_x, full_y, full_airmass, full_fwhm #, full_corr_relflux
 
 def make_global_lists_refastarget(ref_as_target,mainpath,targetname,ffname,exclude_dates,complist,ap_radius='optimal'): #JGM: Jan 4, 2024. 
 	# arrays to hold the full dataset
