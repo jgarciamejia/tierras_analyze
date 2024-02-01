@@ -25,6 +25,7 @@ from test_bin_lc import ep_bin
 from corrected_flux_plot import reference_flux_correction
 from noise_calculation import noise_component_plot 
 from median_filter import median_filter_uneven
+from ap_phot import regression as regress
 
 # Contributors (so far): JIrwin, EPass, JGarciaMejia, PTamburo.
 
@@ -41,6 +42,8 @@ ap.add_argument("-exclude_comps", nargs='*',type=int,help="Comparison stars to e
 ap.add_argument("-ap_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
 ap.add_argument('-restore', default=False, help='If True, the code will try to restore the global photometry for the target with the selected aperture size.')
 ap.add_argument('-median_filter_w', default=0, help='The width of the median filter (in days) to be applied to the data set. If 0, no filtering will be done.')
+ap.add_argument('-regression', default=False, help='If True, the code will do regression on target flux on each night against target x/y pixel positions, average FWHM, and airmass.')
+
 args = ap.parse_args()
 
 target = args.target
@@ -53,6 +56,8 @@ exclude_dates = np.array(args.exclude_dates)
 exclude_comps = np.array(args.exclude_comps)
 ap_radius = args.ap_radius
 restore = bool(args.restore)
+regression = bool(args.regression)
+
 median_filter_w = float(args.median_filter_w)
 
 basepath = '/data/tierras/'
@@ -90,12 +95,16 @@ if restore and os.path.exists(global_flux_path):
     full_relflux = res['Target Relative Flux']
     full_exptime = res['Exposure Time']
     full_sky = res['Sky Background']
+    full_x_pos = res['X']
+    full_y_pos = res['Y']
+    full_airmass = res['Airmass']
+    full_fwhm = res['FWHM']
 else:
     # Load raw target and reference fluxes into global lists
-    full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+    full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
     
     # Write the global lists to global_flux_path 
-    global_flux_dict = {'BJD':full_bjd, 'BJD List':bjd_save, 'Target Flux': full_flux, 'Target Flux Error':full_err, 'Regressor Fluxes':full_reg, 'Regressor Flux Errors':full_reg_err, 'Target Flux Div Exptime':full_flux_div_expt, 'Target Flux Error Div Exptime':full_err_div_expt, 'Target Relative Flux':full_relflux, 'Exposure Time':full_exptime, 'Sky Background':full_sky}
+    global_flux_dict = {'BJD':full_bjd, 'BJD List':bjd_save, 'Target Flux': full_flux, 'Target Flux Error':full_err, 'Regressor Fluxes':full_reg, 'Regressor Flux Errors':full_reg_err, 'Target Flux Div Exptime':full_flux_div_expt, 'Target Flux Error Div Exptime':full_err_div_expt, 'Target Relative Flux':full_relflux, 'Exposure Time':full_exptime, 'Sky Background':full_sky, 'X':full_x_pos, 'Y':full_y_pos, 'Airmass':full_airmass, 'FWHM':full_fwhm}
     pickle.dump(global_flux_dict, open(global_flux_path,'wb'))
 
 # Use the reference stars to calculate the zero-point offsets. 
@@ -148,22 +157,38 @@ full_reg_loop = copy.deepcopy(full_reg)[mask]
 full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
+x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm) #TO DO: how to integrate weights into mearth_style?
 
 # Generate the corrected flux figure
 resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], plot=True) 
 
 # Optionally use a median filter to remove long-term trends from the corrected target flux
 if median_filter_w != 0:
+    print(f'Median filtering target flux with a filter width of {median_filter_w} days.')
     x_filter, y_filter = median_filter_uneven(x, y, median_filter_w)
     mu = np.median(y)
 
-    plt.figure()
-    plt.plot(x,y)
-    plt.plot(x,y_filter)
-    plt.plot(x,mu*y/y_filter)
-    breakpoint()
+    # plt.figure()
+    # plt.plot(x,y)
+    # plt.plot(x,y_filter)
+    # plt.plot(x,mu*y/y_filter)
+    # breakpoint()
     y =  mu*y/(y_filter)
+
+if regression:
+    print('Regressing target flux against x/y position, FWHM, and airmass.')
+    # loop over each night and do regression on target flux against x/y position, fwhm, and airmass
+
+    for ii in range(len(bjd_save)):
+        use_inds = np.where((x>=bjd_save[ii][0])&(x<=bjd_save[ii][-1]))[0]
+        ancillary_dict = {'X':x_pos[use_inds],'Y':y_pos[use_inds],'Airmass':airmass[use_inds],'FWHM':fwhm[use_inds]}
+        reg_flux, intercept, coeffs, ancillary_dict_return = regress(y[use_inds], ancillary_dict, pval_threshold=1e-3, verbose=True)
+        if intercept != 0:
+            # plt.figure()
+            # plt.plot(x[use_inds], y[use_inds])
+            # plt.plot(x[use_inds], reg_flux*np.mean(y[use_inds]))
+            y[use_inds] = reg_flux*np.mean(y[use_inds]) # update flux with the regressed values
+            # breakpoint()
     
 
 # ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
