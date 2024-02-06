@@ -138,7 +138,7 @@ def mearth_style_pat(bjds, flux, err, regressors, regressors_err, exp_times, ski
 
     return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies
 
-def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_times, skies, x_pos, y_pos, airmass, fwhm):
+def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_times, skies, x_pos, y_pos, airmass, fwhm, bjds_list):
 
     """ Use the comparison stars to derive a frame-by-frame zero-point magnitude. Also filter and mask bad cadences """
     """ it's called "mearth_style" because it's inspired by the mearth pipeline """
@@ -167,6 +167,23 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     c0s = -2.5*np.log10(np.nanpercentile(tot_regressor, 90)/tot_regressor)  # initial guess of magnitude zero points
     mask = np.ones_like(c0s, dtype='bool')  # initialize another bad data mask
     mask[np.where(c0s < -0.24)[0]] = 0  # if regressor flux is decremented by 20% or more, this cadence is bad
+
+    # apply mask
+    regressors = regressors[:, mask]
+    regressors_err = regressors_err[:, mask]
+    flux = flux[mask]
+    err = err[mask]
+    bjds = bjds[mask]
+    exp_times = exp_times[mask]
+    skies = skies[mask]
+    x_pos = x_pos[mask]
+    y_pos = y_pos[mask]
+    airmass = airmass[mask]
+    fwhm = fwhm[mask]
+
+    # do a mask on airmass values
+    mask = np.ones_like(airmass, dtype='bool')
+    mask[np.where(airmass > 2)[0]] = 0
 
     # apply mask
     regressors = regressors[:, mask]
@@ -221,9 +238,31 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     airmass = airmass[mask]
     fwhm = fwhm[mask]
 
+    # loop over nights and remove those with little data 
+    nights_remove = []
+    for jj in range(len(bjds_list)):
+        night_inds = np.where((bjds>=bjds_list[jj][0])&(bjds<bjds_list[jj][-1]))[0]
+        if sum(exp_times[night_inds])/3600 < 2:
+            nights_remove.append(jj)
+            flux = np.delete(flux, night_inds)
+            err = np.delete(err, night_inds)
+            bjds = np.delete(bjds, night_inds)
+            cs = np.delete(cs, night_inds)
+            c_unc = np.delete(c_unc, night_inds)
+            regressors = np.delete(regressors, night_inds, axis=1)
+            regressors_err = np.delete(regressors_err, night_inds, axis=1)
+            exp_times = np.delete(exp_times, night_inds)
+            skies = np.delete(skies, night_inds)
+            x_pos = np.delete(x_pos, night_inds)
+            y_pos = np.delete(y_pos, night_inds)
+            airmass = np.delete(airmass, night_inds)
+            fwhm = np.delete(fwhm, night_inds)
+    nights_remove = np.array(nights_remove)
+    bjds_list = np.delete(bjds_list, nights_remove)
+
     cs_original = cs
     delta_weights = np.zeros(len(regressors))+999 # initialize
-    threshold = 1e-5 # delta_weights must converge to this value for the loop to stop
+    threshold = 1e-4 # delta_weights must converge to this value for the loop to stop
     weights_old = weights_init
     full_ref_inds = np.arange(len(regressors))
     while len(np.where(delta_weights>threshold)[0]) > 0:
@@ -239,20 +278,54 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
             corr_jj /= np.mean(corr_jj)
             stddevs[jj] = np.std(corr_jj)
 
-        # corrected_regressors = regressors * 10**(-cs/2.5)
-        # corrected_regressors /= np.mean(corrected_regressors)
-        # stddevs = np.std(corrected_regressors, axis=1)
         weights_new = 1/stddevs**2
         weights_new /= np.sum(weights_new)
         delta_weights = abs(weights_new-weights_old)
-        # cs = -2.5*np.log10(phot_regressor[:,None]/regressors)
-        # cs = np.matmul(weights_new, cs)
+
         weights_old = weights_new
 
-    cs = -2.5*np.log10(phot_regressor[:,None]/regressors)
-    cs = np.matmul(weights_new, cs)
-    
     weights = weights_new
+
+    # determine if any references should be totally thrown out based on the ratio of their measured/expected noise
+    regressors_err_norm = (regressors_err.T / np.median(regressors,axis=1)).T
+    noise_ratios = stddevs / np.median(regressors_err_norm)       
+    weights[np.where(noise_ratios>10)[0]] = 0
+    weights /= sum(weights)
+
+    if len(np.where(weights == 0)[0]) > 0:
+        # now repeat the weighting loop with the bad refs removed 
+        delta_weights = np.zeros(len(regressors))+999 # initialize
+        threshold = 1e-6 # delta_weights must converge to this value for the loop to stop
+        weights_old = weights
+        full_ref_inds = np.arange(len(regressors))
+        count = 0
+        while len(np.where(delta_weights>threshold)[0]) > 0:
+            stddevs = np.zeros(len(regressors))
+            cs = -2.5*np.log10(phot_regressor[:,None]/regressors)
+
+            for jj in range(len(regressors)):
+                if weights_old[jj] == 0:
+                    continue
+                use_inds = np.delete(full_ref_inds, jj)
+                weights_wo_jj = weights_old[use_inds]
+                weights_wo_jj /= np.nansum(weights_wo_jj)
+                cs_wo_jj = np.matmul(weights_wo_jj, cs[use_inds])
+                corr_jj = regressors[jj] * 10**(-cs_wo_jj/2.5)
+                corr_jj /= np.nanmean(corr_jj)
+                stddevs[jj] = np.nanstd(corr_jj)
+            weights_new = 1/(stddevs**2)
+            weights_new /= np.sum(weights_new[~np.isinf(weights_new)])
+            weights_new[np.isinf(weights_new)] = 0
+            delta_weights = abs(weights_new-weights_old)
+            weights_old = weights_new
+            count += 1
+
+    weights = weights_new
+
+    # calculate the zero-point correction
+    cs = -2.5*np.log10(phot_regressor[:,None]/regressors)
+    cs = np.matmul(weights, cs)
+    
     corrected_regressors = regressors * 10**(-cs/2.5)
 
     # flux_original = copy.deepcopy(flux)
@@ -260,4 +333,4 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     flux *= 10**(cs/(-2.5))  #cs, adjust the flux based on the calculated zero points
 
 
-    return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm
+    return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm, bjds_list

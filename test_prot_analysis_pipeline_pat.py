@@ -32,11 +32,11 @@ from ap_phot import regression as regress
 # Deal with command line
 ap = argparse.ArgumentParser()
 ap.add_argument("-target", required=True, help="Name of observed target exactly as shown in raw FITS files.")       
-ap.add_argument("-ffname", required=True, help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
+ap.add_argument("-ffname", required=False, default='flat0000', help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
 ap.add_argument("-N", required=False, type=int, default=1, help="Number of sinusoids to use in the Hartman et al 2018 spot model. Defaults to N=1")
 ap.add_argument("-min_period", required=False, type=float, default=0.1, help="Minimum period limit for the Lomb Scargle search, units=days. Defaults to 0.1 days.")
 ap.add_argument("-max_period", required=False, type=float, default=100, help="Maximum period limit for the Lomb Scargle search, units=days. Defaults to 100 days.")
-ap.add_argument("-ls_resolution", required=False, type=int, default=100000, help="Resolution of the frequency array for the Lomb Scargle search. Defaults to 100000.")
+ap.add_argument("-ls_resolution", required=False, type=int, default=1000000, help="Resolution of the frequency array for the Lomb Scargle search. Defaults to 1000000.")
 ap.add_argument("-exclude_dates", nargs='*',type=str,help="Dates to exclude, if any. Write the dates separated by a space (e.g., 19950119 19901023)")
 ap.add_argument("-exclude_comps", nargs='*',type=int,help="Comparison stars to exclude, if any. Write the comp/ref number assignments ONLY, separated by a space (e.g., 2 5 7 if you want to exclude references/comps R2,R5, and R7.) ")
 ap.add_argument("-ap_radius", default='optimal',help='Aperture radius (in pixels) of data to be loaded. Write as an integer (e.g., 8 if you want to use the circular_fixed_ap_phot_8.csv files for all loaded dates of data). Defaults to the optimal radius. ')
@@ -157,10 +157,14 @@ full_reg_loop = copy.deepcopy(full_reg)[mask]
 full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm) #TO DO: how to integrate weights into mearth_style?
+x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm, bjd_save = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm, bjd_save) 
 
 # Generate the corrected flux figure
 resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], plot=True) 
+
+reg_corr_stds = np.std(masked_reg_corr,axis=1)[np.where(weights!=0)[0]]
+print(np.median(reg_corr_stds))
+breakpoint()
 
 # Optionally use a median filter to remove long-term trends from the corrected target flux
 if median_filter_w != 0:
@@ -168,11 +172,11 @@ if median_filter_w != 0:
     x_filter, y_filter = median_filter_uneven(x, y, median_filter_w)
     mu = np.median(y)
 
-    # plt.figure()
-    # plt.plot(x,y)
-    # plt.plot(x,y_filter)
-    # plt.plot(x,mu*y/y_filter)
-    # breakpoint()
+    plt.figure()
+    plt.plot(x,y)
+    plt.plot(x,y_filter)
+    plt.plot(x,mu*y/y_filter)
+    breakpoint()
     y =  mu*y/(y_filter)
 
 if regression:
@@ -375,7 +379,7 @@ model, map_soln, extras = sigma_clip(x,y,err,period1,N_sinusoids)
 for var in map_soln.keys():
     print(var, map_soln[var])
 
-t_lc_pred = np.linspace(x.min(), x.max(), 10000)  # times at which we're going to plot
+t_lc_pred = np.linspace(x.min(), x.max(), 100000)  # times at which we're going to plot
 
 # get the light curve associated with the maximum a posteriori model
 # QUESTION: why is map_soln['mean_lc'] subtracted off the models here (and not added to the spota calculation)? The full spot model should be mean_lc + 1e3*spota(t)
