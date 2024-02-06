@@ -133,6 +133,9 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		relflux = df['Target Relative Flux']
 		#corr_relflux = df['Target Post-Processed Normalized Flux']
 		print ('{} cadences'.format(len(bjds)))
+		if sum(expt)/(3600) < 2:
+			print('Less than 2 hour(s) of data, skipping.')
+			continue 
 
 		# get the comparison fluxes.
 		comps = {}
