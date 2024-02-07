@@ -6,19 +6,27 @@ import matplotlib.pyplot as plt
 plt.ion()
 import copy 
 from astropy.time import Time 
+from ap_phot import regression 
+from scipy.stats import pearsonr 
 
-def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, cs_unc, complist, weights, plot=False):
+def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, cs_unc, complist, weights, airmass, fwhm, plot=False):
     regressors_adj = np.zeros_like(regressors) #Adjust the regressor fluxes by cs
     regressors_adj_norm = np.zeros_like(regressors)
     regressors_adj_err = np.zeros_like(regressors)
     regressors_adj_err_norm = np.zeros_like(regressors)
+    ancillary_dict = {'Airmass':airmass, 'FWHM':fwhm}
     for ii in range(regressors.shape[0]):
         regressors_adj[ii,:] = regressors[ii,:]*10**(cs/(-2.5))
-        regressors_adj_norm[ii,:] = regressors_adj[ii,:] / np.nanmean(regressors_adj[ii,:]) #Create normalized adjusted fluxes
+        norm = np.nanmean(regressors_adj[ii,:])
+        regressors_adj_norm[ii,:] = regressors_adj[ii,:] / norm #Create normalized adjusted fluxes
         regressors_adj_err[ii,:] = np.sqrt((10**(-0.4*cs)*regressors_err[ii,:])**2 + (-0.921034*regressors[ii,:]*np.exp(-0.921034*cs)*cs_unc)**2)
         # regressors_adj_err[ii,:] = np.sqrt((10**(-0.4*cs)*regressors_err[ii,:])**2)
         regressors_adj_err_norm[ii,:] = regressors_adj_err[ii,:]/ np.nanmean(regressors_adj[ii,:])
-        # breakpoint()
+
+        # correct the adjusted flux with regression agains airmass and FWHM 
+        # reg_flux, intercept, coeffs, ancillary_dict_return = regression(regressors_adj_norm[ii], ancillary_dict, pval_threshold=1e-3, verbose=False)
+        # regressors_adj_norm[ii,:] = reg_flux
+        # regressors_adj[ii,:] = reg_flux * norm
 
     #Figure out which indises correspond to which date by checking the spacing between exposure times
     time_deltas = np.array([bjds[i+1]-bjds[i] for i in range(len(bjds)-1)])
@@ -50,6 +58,9 @@ def reference_flux_correction(bjds, targ_flux, regressors, regressors_err, cs, c
         #flux_original_norm = flux_original / np.nanmean(flux_original)
         marker_ind = 0
         for ii in range(regressors.shape[0]):
+            if weights[ii] == 0:
+                continue 
+
             color = colors[ii%len(colors)]
             if (ii > 0) and (ii%len(colors)) == 0:
                 marker_ind += 1 

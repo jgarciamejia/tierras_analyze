@@ -5,6 +5,9 @@ from glob import glob
 import matplotlib.pyplot as plt
 plt.ion()
 import copy
+from scipy.stats import sigmaclip
+from ap_phot import regression 
+from scipy.stats import pearsonr 
 
 # Written by Emily Pass, inspired by Jonathan Irwin's MEarth Pipeline
 
@@ -138,8 +141,7 @@ def mearth_style_pat(bjds, flux, err, regressors, regressors_err, exp_times, ski
 
     return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies
 
-def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_times, skies, x_pos, y_pos, airmass, fwhm, bjds_list):
-
+def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_times, skies, x_pos, y_pos, airmass, fwhm, bjds_list, duration_limit, airmass_limit, fwhm_limit):
     """ Use the comparison stars to derive a frame-by-frame zero-point magnitude. Also filter and mask bad cadences """
     """ it's called "mearth_style" because it's inspired by the mearth pipeline """
     #pdb.set_trace()
@@ -183,7 +185,24 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
 
     # do a mask on airmass values
     mask = np.ones_like(airmass, dtype='bool')
-    mask[np.where(airmass > 2)[0]] = 0
+    mask[np.where(airmass > airmass_limit)[0]] = 0
+
+    # apply mask
+    regressors = regressors[:, mask]
+    regressors_err = regressors_err[:, mask]
+    flux = flux[mask]
+    err = err[mask]
+    bjds = bjds[mask]
+    exp_times = exp_times[mask]
+    skies = skies[mask]
+    x_pos = x_pos[mask]
+    y_pos = y_pos[mask]
+    airmass = airmass[mask]
+    fwhm = fwhm[mask]
+    
+    # do a mask on fwhm values 
+    mask = np.ones_like(fwhm, dtype='bool')
+    mask[np.where(fwhm > fwhm_limit)[0]] = 0
 
     # apply mask
     regressors = regressors[:, mask]
@@ -205,20 +224,21 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     c_unc = (np.nanpercentile(cs, 84, axis=0) - np.nanpercentile(cs, 16, axis=0)) / 2.  # error estimate that ignores outliers
 
 
-
     ''' c_unc will overestimate error introduced by zero-point offset because it is correlated. Attempt to correct
     for this by only considering the additional error compared to the cadence where c_unc is minimized '''
     c_unc_best = np.min(c_unc)
     c_unc = np.sqrt(c_unc**2 - c_unc_best**2)
 
     # Initialize weights using average fluxes of the regressors
-    weights_init = np.mean(regressors, axis=1)
-    weights_init /= np.sum(weights_init) # Normalize weights to sum to 1
+    # weights_init = np.nanmean(regressors, axis=1)
+    # weights_init /= np.nansum(weights_init) # Normalize weights to sum to 1
 
-    
+    # give all stars equal weights at first
+    weights_init = np.ones(len(regressors))/len(regressors)
+
     cs = np.matmul(weights_init, cs) # Take the *weighted mean* across all regressors
     # cs = np.nanmedian(cs, axis=0)  # take the median across all regressors
-
+    
     # one more bad data mask: don't trust cadences where the regressors have big discrepancies
     mask = np.ones_like(flux, dtype='bool')
     mask[np.where(c_noise > 3*np.median(c_noise))[0]] = 0
@@ -242,7 +262,7 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     nights_remove = []
     for jj in range(len(bjds_list)):
         night_inds = np.where((bjds>=bjds_list[jj][0])&(bjds<bjds_list[jj][-1]))[0]
-        if sum(exp_times[night_inds])/3600 < 2:
+        if sum(exp_times[night_inds])/3600 < duration_limit:
             nights_remove.append(jj)
             flux = np.delete(flux, night_inds)
             err = np.delete(err, night_inds)
@@ -265,6 +285,7 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     threshold = 1e-4 # delta_weights must converge to this value for the loop to stop
     weights_old = weights_init
     full_ref_inds = np.arange(len(regressors))
+    ancillary_dict = {'Airmass':airmass, 'FWHM':fwhm}
     while len(np.where(delta_weights>threshold)[0]) > 0:
         stddevs = np.zeros(len(regressors))
         cs = -2.5*np.log10(phot_regressor[:,None]/regressors)
@@ -272,26 +293,30 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
         for jj in range(len(regressors)):
             use_inds = np.delete(full_ref_inds, jj)
             weights_wo_jj = weights_old[use_inds]
-            weights_wo_jj /= np.sum(weights_wo_jj)
+            weights_wo_jj /= np.nansum(weights_wo_jj)
             cs_wo_jj = np.matmul(weights_wo_jj, cs[use_inds])
             corr_jj = regressors[jj] * 10**(-cs_wo_jj/2.5)
-            corr_jj /= np.mean(corr_jj)
-            stddevs[jj] = np.std(corr_jj)
+            # reg_flux, intercept, coeffs, ancillary_dict_return = regression(corr_jj, ancillary_dict, pval_threshold=1e-3, verbose=False)
+            corr_jj /= np.nanmedian(corr_jj)
+            stddevs[jj] = np.nanstd(corr_jj)
 
         weights_new = 1/stddevs**2
-        weights_new /= np.sum(weights_new)
+        weights_new /= np.nansum(weights_new)
         delta_weights = abs(weights_new-weights_old)
-
         weights_old = weights_new
 
     weights = weights_new
 
     # determine if any references should be totally thrown out based on the ratio of their measured/expected noise
-    regressors_err_norm = (regressors_err.T / np.median(regressors,axis=1)).T
-    noise_ratios = stddevs / np.median(regressors_err_norm)       
-    weights[np.where(noise_ratios>10)[0]] = 0
-    weights /= sum(weights)
+    regressors_err_norm = (regressors_err.T / np.nanmedian(regressors,axis=1)).T
+    noise_ratios = stddevs / np.nanmedian(regressors_err_norm)      
 
+    # the noise ratio threshold will depend on how many bad/variable reference stars were used in the ALC
+    # sigmaclip the noise ratios and set the upper limit to the n-sigma upper bound 
+    v, l, h = sigmaclip(noise_ratios, 1, 1)
+    weights[np.where(noise_ratios>h)[0]] = 0
+    weights /= sum(weights)
+    
     if len(np.where(weights == 0)[0]) > 0:
         # now repeat the weighting loop with the bad refs removed 
         delta_weights = np.zeros(len(regressors))+999 # initialize
@@ -321,16 +346,37 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
             count += 1
 
     weights = weights_new
-
+    
     # calculate the zero-point correction
     cs = -2.5*np.log10(phot_regressor[:,None]/regressors)
     cs = np.matmul(weights, cs)
     
     corrected_regressors = regressors * 10**(-cs/2.5)
-
+    
+    
     # flux_original = copy.deepcopy(flux)
     err = 10**(cs/(-2.5)) * np.sqrt(err**2 + (c_unc*flux*np.log(10)/(-2.5))**2)  # propagate error
     flux *= 10**(cs/(-2.5))  #cs, adjust the flux based on the calculated zero points
 
+    # do a final mask to remove any nans 
+    mask = np.ones_like(flux, dtype='bool')
+    mask[np.where(np.isnan(flux))[0]] = 0
+
+    # apply mask
+    flux = flux[mask]
+    err = err[mask]
+    bjds = bjds[mask]
+    cs = cs[mask]
+    c_unc = c_unc[mask]
+    regressors = regressors[:, mask]
+    regressors_err = regressors_err[:, mask]
+    exp_times = exp_times[mask]
+    skies = skies[mask]
+    x_pos = x_pos[mask]
+    y_pos = y_pos[mask]
+    airmass = airmass[mask]
+    fwhm = fwhm[mask]
+
+    
 
     return bjds, flux, err, regressors, regressors_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm, bjds_list

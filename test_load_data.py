@@ -82,7 +82,7 @@ def return_data_onedate(mainpath,targetname,obsdate,ffname,exclude_comps): #JGM 
 		rel_flux_T1 = recalc_rel_flux_T1
 	return (df,bjds,rel_flux_T1,airmasses,widths)
 
-def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radius='optimal'): #JGM: Jan 4, 2024. 
+def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist, duration_limit, ap_radius='optimal'): #JGM: Jan 4, 2024. 
 	# arrays to hold the full dataset
 	full_bjd = []
 	full_flux = []
@@ -133,8 +133,8 @@ def make_global_lists(mainpath,targetname,ffname,exclude_dates,complist,ap_radiu
 		relflux = df['Target Relative Flux']
 		#corr_relflux = df['Target Post-Processed Normalized Flux']
 		print ('{} cadences'.format(len(bjds)))
-		if sum(expt)/(3600) < 2:
-			print('Less than 2 hour(s) of data, skipping.')
+		if sum(expt)/(3600) < duration_limit:
+			print(f'Less than {duration_limit} hour(s) of data, skipping.')
 			continue 
 
 		# get the comparison fluxes.

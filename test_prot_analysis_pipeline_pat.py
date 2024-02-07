@@ -11,7 +11,7 @@ from time import time
 import matplotlib.pylab as plt
 from astropy.timeseries import LombScargle
 from astropy.time import Time
-from scipy.stats import sigmaclip
+from scipy.stats import sigmaclip, pearsonr
 import pickle 
 
 import pymc3 as pm 
@@ -26,6 +26,7 @@ from corrected_flux_plot import reference_flux_correction
 from noise_calculation import noise_component_plot 
 from median_filter import median_filter_uneven
 from ap_phot import regression as regress
+from flare_masker import flare_masker
 
 # Contributors (so far): JIrwin, EPass, JGarciaMejia, PTamburo.
 
@@ -43,6 +44,9 @@ ap.add_argument("-ap_radius", default='optimal',help='Aperture radius (in pixels
 ap.add_argument('-restore', default=False, help='If True, the code will try to restore the global photometry for the target with the selected aperture size.')
 ap.add_argument('-median_filter_w', default=0, help='The width of the median filter (in days) to be applied to the data set. If 0, no filtering will be done.')
 ap.add_argument('-regression', default=False, help='If True, the code will do regression on target flux on each night against target x/y pixel positions, average FWHM, and airmass.')
+ap.add_argument('-airmass_limit', required=False, default=2, help='Maximum airmass of a cadence that will be retained in the analysis.')
+ap.add_argument('-duration_limit', required=False, default=1, help='Minimum duration (in hours) that a night of observations must have to be retained in the analysis. Note that this limit refers to the total exposure time on a given night, the data do not have to be continuous.')
+ap.add_argument('-fwhm_limit', required=False, default=3.5, help='Maximum FWHM (in arcseconds) that a cadence must have to be retained in the analysis.')
 
 args = ap.parse_args()
 
@@ -57,6 +61,8 @@ exclude_comps = np.array(args.exclude_comps)
 ap_radius = args.ap_radius
 restore = bool(args.restore)
 regression = bool(args.regression)
+airmass_limit = float(args.airmass_limit)
+duration_limit = float(args.duration_limit) 
 
 median_filter_w = float(args.median_filter_w)
 
@@ -101,53 +107,12 @@ if restore and os.path.exists(global_flux_path):
     full_fwhm = res['FWHM']
 else:
     # Load raw target and reference fluxes into global lists
-    full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,ap_radius=args.ap_radius)
+    full_bjd, bjd_save, full_flux, full_err, full_reg, full_reg_err, full_flux_div_expt, full_err_div_expt, full_relflux, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm = ld.make_global_lists(lcpath,target,ffname,exclude_dates,complist,duration_limit,ap_radius=args.ap_radius, )
     
     # Write the global lists to global_flux_path 
     global_flux_dict = {'BJD':full_bjd, 'BJD List':bjd_save, 'Target Flux': full_flux, 'Target Flux Error':full_err, 'Regressor Fluxes':full_reg, 'Regressor Flux Errors':full_reg_err, 'Target Flux Div Exptime':full_flux_div_expt, 'Target Flux Error Div Exptime':full_err_div_expt, 'Target Relative Flux':full_relflux, 'Exposure Time':full_exptime, 'Sky Background':full_sky, 'X':full_x_pos, 'Y':full_y_pos, 'Airmass':full_airmass, 'FWHM':full_fwhm}
     pickle.dump(global_flux_dict, open(global_flux_path,'wb'))
 
-# Use the reference stars to calculate the zero-point offsets. 
-# Measure the standard deviation of their median night-to-night fluxes after being corrected with the measured zero-points.
-# Identify outliers and drop them. 
-# Repeat the calcluation until no new outliers are found.
-
-# ORIGINAL ITERATIVE PROCEDURE
-# count = 0 
-# while True:
-#     # Update the mask with any comp stars identified as outliers
-#     mask = ~np.isin(complist,exclude_comps)
-
-#     # Drop flagged comp stars from the full regressor array
-#     full_reg_loop = copy.deepcopy(full_reg)[mask]
-#     full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
-
-#     # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-#     x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky) #TO DO: how to integrate weights into mearth_style?
-
-#     binned_fluxes = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], plot=False) #Returns an n_comp_star x n_nights array of medians of corrected flu
-    
-#     #Use the stddevs of the binned fluxes to determine which references to drop
-#     stddevs = np.std(binned_fluxes, axis=1)
-#     v, l, h = sigmaclip(stddevs, 3, 3)
-
-#     # If it's the first loop, instantiate the exclude_comps array by finding the indices of those that lie outside the range identified by sigmaclip
-#     if count == 0:
-#         exclude_comps = np.where((stddevs>h))[0] + 1 # Does sigma-clipping and also an absolute cut on the night-to-night stddevs of median fluxes: use the best 20%. 
-
-#     # If it's a subsequent loop, we append those indices to the already-existing list of bad comp stars
-#     else:
-#         exclude_comps = np.unique(np.sort(np.append(exclude_comps, np.where((stddevs>h))[0] + 1).astype('int')))
-
-#         # If the list of comp stars to be excluded matches the one from the previous loop, break
-#         # Alternatively, break if the number of iterations reaches the length of the number of stars in the complist. This protects against getting into an infinite loop.
-#         if (np.array_equal(exclude_comps, exclude_comps_old)) or (count > len(complist)):
-#             print('Converged!')
-#             break
-    
-#     print(f'Excluding references {exclude_comps}')
-#     exclude_comps_old = copy.deepcopy(exclude_comps)
-#     count += 1
 
 # Update the mask with any comp stars identified as outliers
 mask = ~np.isin(complist,exclude_comps)
@@ -157,14 +122,14 @@ full_reg_loop = copy.deepcopy(full_reg)[mask]
 full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
-x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm, bjd_save = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm, bjd_save) 
+x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm, bjd_save = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm, bjd_save, duration_limit, airmass_limit, fwhm_limit) 
 
 # Generate the corrected flux figure
-resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], plot=True) 
+resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], airmass, fwhm, plot=True) 
 
-reg_corr_stds = np.std(masked_reg_corr,axis=1)[np.where(weights!=0)[0]]
-print(np.median(reg_corr_stds))
-breakpoint()
+
+reg_corr_stds = np.nanstd(masked_reg_corr,axis=1)[np.where(weights!=0)[0]]
+print(np.nanmedian(reg_corr_stds))
 
 # Optionally use a median filter to remove long-term trends from the corrected target flux
 if median_filter_w != 0:
@@ -185,7 +150,7 @@ if regression:
 
     for ii in range(len(bjd_save)):
         use_inds = np.where((x>=bjd_save[ii][0])&(x<=bjd_save[ii][-1]))[0]
-        ancillary_dict = {'X':x_pos[use_inds],'Y':y_pos[use_inds],'Airmass':airmass[use_inds],'FWHM':fwhm[use_inds]}
+        ancillary_dict = {'Airmass':airmass[use_inds],'FWHM':fwhm[use_inds]}
         reg_flux, intercept, coeffs, ancillary_dict_return = regress(y[use_inds], ancillary_dict, pval_threshold=1e-3, verbose=True)
         if intercept != 0:
             # plt.figure()
@@ -194,20 +159,69 @@ if regression:
             y[use_inds] = reg_flux*np.mean(y[use_inds]) # update flux with the regressed values
             # breakpoint()
     
+flare_mask = flare_masker(bjd_save, x, y)
 
-# ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
-# bp_rps = np.array(refdf['bp_rp'][1:][mask])
-# G_mags = np.array(refdf['G'][1:][mask])
+# save the flare data in case we want it later
+flare_x = x[~flare_mask]
+flare_y = y[~flare_mask]
+flare_err = err[~flare_mask]
 
-# detector_half = np.zeros(len(mask), dtype='int')
-# for i in range(len(ref_dists)):
-#     if refdf['y'][i+1] > 1023:
-#         detector_half[i] = 1
-# detector_half = detector_half[mask]
+# mask out the flares
+x = x[flare_mask]
+y = y[flare_mask]
+err = err[flare_mask]
+
+# y_reg = regress(y, {'Airmass':airmass[flare_mask], 'FWHM':fwhm[flare_mask]})[0]
+# y = y_reg * np.median(y)
+
+ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
+bp_rps = np.array(refdf['bp_rp'][1:][mask])
+G_mags = np.array(refdf['G'][1:][mask])
+
+detector_half = np.zeros(len(mask), dtype='int')
+for i in range(len(ref_dists)):
+    if refdf['y'][i+1] > 1023:
+        detector_half[i] = 1
+detector_half = detector_half[mask]
 
 # plt.figure()
-# colors = ['tab:blue', 'tab:orange']
-# stddevs = np.std(binned_fluxes, axis=1)*1e3
+colors = ['tab:blue', 'tab:orange']
+stddevs = np.std(binned_fluxes, axis=1)*1e3
+
+print(f'Median night-to-night stddev of weighted ref stars: {np.median(stddevs[np.where(weights != 0)[0]]):.2f} ppt')
+
+fwhm_correlations = np.zeros(len(masked_reg_corr))
+fwhm_pvals = np.zeros_like(fwhm_correlations)
+airmass_correlations = np.zeros_like(fwhm_correlations)
+airmass_pvals = np.zeros_like(fwhm_correlations)
+for i in range(len(masked_reg_corr)):
+    v, l, h = sigmaclip(masked_reg_corr[i,:], 3, 3)
+    use_inds = np.where((masked_reg_corr[i]>l)&(masked_reg_corr[i]<h))[0]
+    corr, pval = pearsonr(masked_reg_corr[i,use_inds], fwhm[use_inds])
+    fwhm_correlations[i] = corr
+    fwhm_pvals[i] = pval
+    corr, pval = pearsonr(masked_reg_corr[i,use_inds], airmass[use_inds])
+    airmass_correlations[i] = corr
+    airmass_pvals[i] = pval
+
+    # ancillary_dict = {'Airmass':airmass[use_inds],'FWHM':fwhm[use_inds]}
+    # reg_flux, intercept, coeffs, ancillary_dict_return = regress(masked_reg_corr[i,use_inds], ancillary_dict, pval_threshold=1e-3, verbose=True)
+    
+
+# fig, ax = plt.subplots(2,2,figsize=(8,7))
+# ax[0,0].scatter(refdf['x'][1:],airmass_correlations)
+# ax[1,0].scatter(refdf['x'][1:],fwhm_correlations)
+
+# ax[0,0].set_ylabel('Airmass correlation')
+# ax[1,0].set_ylabel('FWHM correlation')
+# ax[1,0].set_xlabel('X position')
+
+# ax[0,1].scatter(refdf['y'][1:],airmass_correlations, color='tab:orange')
+# ax[1,1].set_xlabel('Y position')
+# ax[1,1].scatter(refdf['y'][1:],fwhm_correlations, color='tab:orange')
+# breakpoint()
+
+
 # for i in range(len(ref_dists)):
 #     plt.scatter(ref_dists[i], stddevs[i], color=colors[detector_half[i]])
 
@@ -236,14 +250,14 @@ if regression:
 # plt.tick_params(labelsize=14)
 # plt.tight_layout()
 
-# plt.figure()
-# for i in range(len(ref_dists)):
-#     plt.scatter(G_mags[i], stddevs[i], color=colors[detector_half[i]])
+plt.figure()
+for i in range(len(ref_dists)):
+    plt.scatter(G_mags[i], stddevs[i], color=colors[detector_half[i]])
 
-# plt.xlabel('G mag', fontsize=16)
-# plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-# plt.tick_params(labelsize=14)
-# plt.tight_layout()
+plt.xlabel('G mag', fontsize=16)
+plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+plt.tick_params(labelsize=14)
+plt.tight_layout()
 
 # plt.figure()
 # for i in range(len(binned_fluxes)):
@@ -288,6 +302,7 @@ for ii in range(N):
    # get the indices corresponding to a given night
    use_bjds = np.array(bjd_save[ii])
    inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
+   flare_inds = np.where((flare_x>min(use_bjds))&(flare_x<max(use_bjds)))[0]
    if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
        continue
    else:
@@ -299,6 +314,7 @@ for ii in range(N):
 
        #markers, caps, bars = ax[0, ii].errorbar((bjd_plot-np.min(bjd_plot))*24., flux_plot, yerr=err_plot, marker='.', ls='', color=cmap(color_ind), alpha=0.2)
        ax[0, ii].scatter((bjd_plot-np.min(bjd_plot))*24., flux_plot, marker='.', color=color_inds, alpha=0.2)
+       # ax[0,ii].scatter((flare_x[flare_inds] - np.min(bjd_plot))*24., flare_y[flare_inds], marker='.', color='r', alpha=0.2)
 
        # Generate the date label for the top of the plot 
        ut_date = Time(bjd_plot[-1],format='jd',scale='tdb').iso.split(' ')[0]
@@ -333,6 +349,7 @@ plt.subplots_adjust(wspace=0, hspace=0)
 mu = np.nanmedian(y)
 y = (y / mu - 1) * 1e3
 err = (err/mu) * 1e3
+
 
 # ################# PERIOD FINDING TREATMENT ############# 
 
@@ -407,6 +424,7 @@ for ii in range(N):
     # get the indices corresponding to a given night
     use_bjds = np.array(bjd_save[ii])
     inds = np.where((x > np.min(use_bjds)) & (x < np.max(use_bjds)))[0]
+    flare_inds = np.where((flare_x>min(use_bjds))&(flare_x<max(use_bjds)))[0]
     if len(inds) == 0:  # if the entire night was masked due to bad weather, don't plot anything
         continue
     else:
@@ -431,6 +449,7 @@ for ii in range(N):
     # plot the residuals
     #markers, caps, bars = ax[1, ii].errorbar((bjd_plot - np.min(bjd_plot))*24., flux_plot - lc_plot, yerr=err_plot, fmt='k.', alpha=0.2)
     ax[1,ii].scatter((bjd_plot - np.min(bjd_plot))*24., flux_plot - lc_plot, marker='.', color=color_inds, alpha=0.2)
+    # ax[1,ii].scatter((flare_x[flare_inds] - np.min(bjd_plot))*24., flare_y[flare_inds] - lc_obs[flare_inds], marker='.', color='r', alpha=0.2)
     #[bar.set_alpha(0.05) for bar in bars]
     markers, caps, bars = ax[1, ii].errorbar(xs_b, binned_res, yerr=e_binned_res, mfc='w', mec='k', mew=1, ecolor='k', fmt='.', alpha=0.7, zorder=5)
     [bar.set_alpha(0.3) for bar in bars]
