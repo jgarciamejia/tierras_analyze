@@ -63,6 +63,7 @@ restore = bool(args.restore)
 regression = bool(args.regression)
 airmass_limit = float(args.airmass_limit)
 duration_limit = float(args.duration_limit) 
+fwhm_limit = float(args.fwhm_limit)
 
 median_filter_w = float(args.median_filter_w)
 
