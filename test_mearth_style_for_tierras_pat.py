@@ -30,8 +30,7 @@ def mearth_style(bjds, flux, err, regressors):
     bjds = bjds[mask]
 
     tot_regressor = np.sum(regressors, axis=0)  # the total regressor flux at each time point = sum of comp star fluxes in each exposure
-    c0s = -2.5*np.log10(np.nanpercentile(tot_regressor, 90)/tot_regressor)  # initial guess of magnitude zero points
-
+    c0s = -2.5*np.log10(np.nanpercentile(tot_regressor, 90)/tot_regressor)  # initial guess of magnitude zero points    
     mask = np.ones_like(c0s, dtype='bool')  # initialize another bad data mask
     mask[np.where(c0s < -0.24)[0]] = 0  # if regressor flux is decremented by 20% or more, this cadence is bad
 
@@ -280,6 +279,30 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
     nights_remove = np.array(nights_remove)
     bjds_list = np.delete(bjds_list, nights_remove)
 
+    # do the same thing but remove nights where the flux varies a lot due to clouds
+    nights_remove = []
+    #fig, ax = plt.subplots(1,len(bjds_list),sharey=True,figsize=(15,6))
+    # for jj in range(len(bjds_list)):
+    #     night_inds = np.where((bjds>=bjds_list[jj][0])&(bjds<bjds_list[jj][-1]))[0]
+    #     #ax[jj].plot(bjds[night_inds], flux[night_inds]/np.median(flux[night_inds]))
+    #     if np.std(flux[night_inds]/np.median(flux[night_inds])) > 0.025:
+    #         nights_remove.append(jj)
+    #         flux = np.delete(flux, night_inds)
+    #         err = np.delete(err, night_inds)
+    #         bjds = np.delete(bjds, night_inds)
+    #         cs = np.delete(cs, night_inds)
+    #         c_unc = np.delete(c_unc, night_inds)
+    #         regressors = np.delete(regressors, night_inds, axis=1)
+    #         regressors_err = np.delete(regressors_err, night_inds, axis=1)
+    #         exp_times = np.delete(exp_times, night_inds)
+    #         skies = np.delete(skies, night_inds)
+    #         x_pos = np.delete(x_pos, night_inds)
+    #         y_pos = np.delete(y_pos, night_inds)
+    #         airmass = np.delete(airmass, night_inds)
+    #         fwhm = np.delete(fwhm, night_inds)
+    # nights_remove = np.array(nights_remove)
+    # bjds_list = np.delete(bjds_list, nights_remove)
+
     cs_original = cs
     delta_weights = np.zeros(len(regressors))+999 # initialize
     threshold = 1e-4 # delta_weights must converge to this value for the loop to stop
@@ -313,7 +336,7 @@ def mearth_style_pat_weighted(bjds, flux, err, regressors, regressors_err, exp_t
 
     # the noise ratio threshold will depend on how many bad/variable reference stars were used in the ALC
     # sigmaclip the noise ratios and set the upper limit to the n-sigma upper bound 
-    v, l, h = sigmaclip(noise_ratios, 1, 1)
+    v, l, h = sigmaclip(noise_ratios, 2, 2)
     weights[np.where(noise_ratios>h)[0]] = 0
     weights /= sum(weights)
     
