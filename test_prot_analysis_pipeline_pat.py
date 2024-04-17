@@ -45,7 +45,7 @@ ap.add_argument('-restore', default=False, help='If True, the code will try to r
 ap.add_argument('-median_filter_w', default=0, help='The width of the median filter (in days) to be applied to the data set. If 0, no filtering will be done.')
 ap.add_argument('-regression', default=False, help='If True, the code will do regression on target flux on each night against target x/y pixel positions, average FWHM, and airmass.')
 ap.add_argument('-airmass_limit', required=False, default=2, help='Maximum airmass of a cadence that will be retained in the analysis.')
-ap.add_argument('-duration_limit', required=False, default=1, help='Minimum duration (in hours) that a night of observations must have to be retained in the analysis. Note that this limit refers to the total exposure time on a given night, the data do not have to be continuous.')
+ap.add_argument('-duration_limit', required=False, default=0.5, help='Minimum duration (in hours) that a night of observations must have to be retained in the analysis. Note that this limit refers to the total exposure time on a given night, the data do not have to be continuous.')
 ap.add_argument('-fwhm_limit', required=False, default=3.5, help='Maximum FWHM (in arcseconds) that a cadence must have to be retained in the analysis.')
 
 args = ap.parse_args()
@@ -125,9 +125,16 @@ full_reg_err_loop = copy.deepcopy(full_reg_err)[mask]
 # mask bad data and use comps to calculate frame-by-frame magnitude zero points
 x, y, err, masked_reg, masked_reg_err, cs, c_unc, exp_times, skies, weights, x_pos, y_pos, airmass, fwhm, bjd_save = mearth_style_pat_weighted(full_bjd, full_flux_div_expt, full_err_div_expt, full_reg_loop, full_reg_err_loop, full_exptime, full_sky, full_x_pos, full_y_pos, full_airmass, full_fwhm, bjd_save, duration_limit, airmass_limit, fwhm_limit) 
 
-# Generate the corrected flux figure
-resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, y, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], airmass, fwhm, plot=True) 
+plt.figure()
+plt.hist(airmass)
+plt.xlabel('Airmass')
 
+plt.figure()
+plt.hist(fwhm)
+plt.xlabel('FWHM')
+
+# Generate the corrected flux figure
+resfig, resax, binned_fluxes, masked_reg_corr = reference_flux_correction(x, bjd_save, masked_reg, masked_reg_err, cs, c_unc, complist[mask], weights[mask], airmass, fwhm) 
 
 reg_corr_stds = np.nanstd(masked_reg_corr,axis=1)[np.where(weights!=0)[0]]
 print(np.nanmedian(reg_corr_stds))
@@ -252,13 +259,16 @@ for i in range(len(masked_reg_corr)):
 # plt.tight_layout()
 
 plt.figure()
-for i in range(len(ref_dists)):
-    plt.scatter(G_mags[i], stddevs[i], color=colors[detector_half[i]])
+color_inds = np.zeros(len(weights),dtype='int')
+color_inds[np.where(weights==0)[0]] = 1
+plt.scatter(G_mags, stddevs, color=np.array(colors)[color_inds])
+plt.axvline(refdf['G'][0],color='tab:red')
 
 plt.xlabel('G mag', fontsize=16)
 plt.ylabel('$\sigma$ (ppt)', fontsize=16)
 plt.tick_params(labelsize=14)
 plt.tight_layout()
+breakpoint()
 
 # plt.figure()
 # for i in range(len(binned_fluxes)):
