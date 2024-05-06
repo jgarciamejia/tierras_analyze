@@ -60,7 +60,8 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# flux_err_corr_save = np.zeros(n_ims)
 	# alc_save = np.zeros(n_ims)
 	# alc_err_save = np.zeros(n_ims)
-	# mask_save = np.zeros(n_ims)
+	mask_save = np.zeros(n_ims, dtype='bool')
+	mask_save[np.where(mask)] = True
 	weights_save = np.zeros(flux.shape[1])
 
 	regressor_inds = np.arange(1,flux.shape[1]) # get the indices of the stars to use as the zero point calibrators; these represent the indices of the calibrators *in the data_dict arrays*
@@ -76,13 +77,13 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 
 	# identify cadences with "low" flux by looking at normalized summed reference star fluxes
 	zp0s = tot_regressor/np.nanmedian(tot_regressor) 	
-	mask = np.ones_like(zp0s, dtype='bool')  # initialize another bad data mask
-	mask[np.where(zp0s < 0.25)[0]] = 0  # if regressor flux is decremented by 75% or more, this cadence is bad
-	target_flux[~mask] = np.nan 
-	target_flux_err[~mask] = np.nan 
-	regressors[~mask] = np.nan
-	regressors_err[~mask] = np.nan
-	
+	mask = np.zeros_like(zp0s, dtype='bool')  # initialize another bad data mask
+	mask[np.where(zp0s < 0.25)[0]] = 1  # if regressor flux is decremented by 75% or more, this cadence is bad
+	target_flux[mask] = np.nan 
+	target_flux_err[mask] = np.nan 
+	regressors[mask] = np.nan
+	regressors_err[mask] = np.nan
+	mask_save[np.where(mask)] = True
 
 	# repeat the cs estimate now that we've masked out the bad cadences
 	# phot_regressor = np.nanpercentile(regressors, 90, axis=1)  # estimate photometric flux level for each star
@@ -230,25 +231,25 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 
 	# calculate the zero-point correction
 
-	F_e = np.matmul(regressors, weights)
-	N_e = np.sqrt(np.matmul(regressors_err**2, weights**2))	
-	
-	flux_corr = target_flux / F_e
-	err_corr = np.sqrt((target_flux_err/F_e)**2 + (target_flux*N_e/(F_e**2))**2)
+	# F_e = np.matmul(regressors, weights)
+	# N_e = np.sqrt(np.matmul(regressors_err**2, weights**2))	
+	# flux_corr = target_flux / F_e
+	# err_corr = np.sqrt((target_flux_err/F_e)**2 + (target_flux*N_e/(F_e**2))**2)
 
-	# renormalize
-	norm = np.nanmedian(flux_corr)
-	flux_corr /= norm 
-	err_corr /= norm 
+	# # renormalize
+	# norm = np.nanmedian(flux_corr)
+	# flux_corr /= norm 
+	# err_corr /= norm 
 
-	alc = F_e
-	alc_err = N_e 
-	flux_err_corr = err_corr
+	# alc = F_e
+	# alc_err = N_e 
+	# flux_err_corr = err_corr
 
 	weights = np.insert(weights, 0, 0)
-	weights_save = weights
+	# weights_save = weights
 
-	return flux_corr, flux_err_corr, alc, alc_err, weights_save 
+	# return flux_corr, flux_err_corr, alc, alc_err, weights_save 
+	return weights, mask_save
 
 def allen_deviation(times, flux, flux_err):
 

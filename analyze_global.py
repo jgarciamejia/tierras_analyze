@@ -222,7 +222,25 @@ def main(raw_args=None):
 		best_med_stddev = 9999999.
 		for i in range(n_dfs):
 			# flux[i, :, inds[0]][saturated_flags[i,:,inds[0]]==1] = np.nan
-			corr_flux, corr_flux_err, alc, alc_err, weights = mearth_style_pat_weighted_flux(flux[i][:,inds], flux_err[i][:,inds], non_linear_flags[i][:,inds], airmasses, exposure_times)
+			
+			weights, mask = mearth_style_pat_weighted_flux(flux[i][:,inds], flux_err[i][:,inds], non_linear_flags[i][:,inds], airmasses, exposure_times)
+			# corr_flux, corr_flux_err, alc, alc_err, weights = mearth_style_pat_weighted_flux(flux[i][:,inds], flux_err[i][:,inds], non_linear_flags[i][:,inds], airmasses, exposure_times)
+
+			mask[np.where(saturated_flags[i][:,inds[0]])] = True # mask out any saturated exposures for this source
+
+			alc = np.matmul(flux[i][:,inds], weights)
+			alc_err = np.sqrt(np.matmul(flux_err[i][:,inds]**2, weights**2))
+
+			target_flux = copy.deepcopy(flux[i][:,inds[0]])
+			target_flux_err = copy.deepcopy(flux_err[i][:,inds[0]])
+			target_flux[mask] = np.nan
+			target_flux_err[mask] = np.nan
+			corr_flux = target_flux / alc
+			corr_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
+
+			norm = np.nanmedian(corr_flux)
+			corr_flux /= norm 
+			corr_flux_err /= norm
 
 			#Trim any NaNs
 			use_inds = ~np.isnan(corr_flux)
