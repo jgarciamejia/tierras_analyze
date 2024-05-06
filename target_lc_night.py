@@ -6,7 +6,7 @@ from astroquery.simbad import Simbad
 from glob import glob 
 from scipy.stats import sigmaclip 
 import copy 
-from ap_phot import juliana_binning
+from ap_phot import regression
 
 '''
 	Script for creating a Tierras light curve for a target *on a single night*.
@@ -319,12 +319,13 @@ def load_data(phot_df, source_df):
 	flux_err = np.zeros_like(flux)
 	airmasses = np.array(phot_df['Airmass'])
 	exptimes = np.array(phot_df['Exposure Time'])
+	backgrounds = np.zeros_like(flux)
 
 	for ii in range(len(source_df)):
 		flux[:,ii] = phot_df[f'S{source_df["source_index"][ii]} Source-Sky ADU']
 		flux_err[:,ii] = phot_df[f'S{source_df["source_index"][ii]} Source-Sky Error ADU']
-	
-	data_dict = {'BJD TDB':times, 'Flux':flux, 'Flux Error':flux_err, 'Airmass':airmasses, 'Exposure Time':exptimes}
+		backgrounds[:,ii] = phot_df[f'S{source_df["source_index"][ii]} Sky ADU']
+	data_dict = {'BJD TDB':times, 'Flux':flux, 'Flux Error':flux_err, 'Airmass':airmasses, 'Exposure Time':exptimes, 'Background':backgrounds}
 
 	return data_dict 
 
@@ -417,7 +418,11 @@ def main(raw_args=None):
 		next_exptime = np.floor(exptime/(allen_dev_res*60)) * allen_dev_res*60 + allen_dev_res*60
 		bins = np.append(bins, np.arange(next_exptime, allen_dev_upper*60+allen_dev_res*60, allen_dev_res*60)) / 60
 
-		std, theo, binned_times, binned_fluxes = allen_deviation(bins, times, norm_flux[:,0], norm_flux_errs[:,0], exptimes[0])
+		inds = ~np.isnan(norm_flux[:,0])
+		regress_dict = {'Background':corr_dict['Background'][inds,0]}
+		regressed_flux, intercept, coeffs, regress_dict_return = regression(norm_flux[inds,0], regress_dict)
+		
+		std, theo, binned_times, binned_fluxes = allen_deviation(bins, times[inds], regressed_flux, norm_flux_errs[inds,0], exptimes[0])
 
 		if ii == 10:
 			plt.ion()
