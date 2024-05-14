@@ -77,16 +77,16 @@ start = time()
 
 #load the reference star df 
 targpath = os.path.join(basepath, 'targets')
-refdf_path = os.path.join(targpath, f'{target}/{target}_target_and_ref_stars.csv')
-refdf = pd.read_csv(refdf_path)
+# refdf_path = os.path.join(targpath, f'{target}/{target}_target_and_ref_stars.csv')
+# refdf = pd.read_csv(refdf_path)
 
 
 # load the list of comparison stars to use. Alt method: use same strategy as in ld.calc_rel_flux
-# compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
-# compfname_df = pd.read_csv(compfname)
-# complist = compfname_df['Reference'].to_numpy()
-# complist = np.array([int(s.split()[-1]) for s in complist])
-complist = np.arange(len(refdf)-1)+1
+compfname = os.path.join(lcfolderlist[0],ffname,"night_weights.csv")
+compfname_df = pd.read_csv(compfname)
+complist = compfname_df['Reference'].to_numpy()
+complist = np.array([int(s.split()[-1]) for s in complist])
+# complist = np.arange(len(refdf)-1)+1
 
 global_flux_path = targpath+f'/{target}/global_uncorrected_circular_fixed_ap_phot_{ap_radius}.csv'
 if restore and os.path.exists(global_flux_path):
@@ -112,7 +112,7 @@ else:
     
     # Write the global lists to global_flux_path 
     global_flux_dict = {'BJD':full_bjd, 'BJD List':bjd_save, 'Target Flux': full_flux, 'Target Flux Error':full_err, 'Regressor Fluxes':full_reg, 'Regressor Flux Errors':full_reg_err, 'Target Flux Div Exptime':full_flux_div_expt, 'Target Flux Error Div Exptime':full_err_div_expt, 'Target Relative Flux':full_relflux, 'Exposure Time':full_exptime, 'Sky Background':full_sky, 'X':full_x_pos, 'Y':full_y_pos, 'Airmass':full_airmass, 'FWHM':full_fwhm}
-    pickle.dump(global_flux_dict, open(global_flux_path,'wb'))
+    #pickle.dump(global_flux_dict, open(global_flux_path,'wb'))
 
 
 # Update the mask with any comp stars identified as outliers
@@ -182,15 +182,15 @@ err = err[flare_mask]
 # y_reg = regress(y, {'Airmass':airmass[flare_mask], 'FWHM':fwhm[flare_mask]})[0]
 # y = y_reg * np.median(y)
 
-ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
-bp_rps = np.array(refdf['bp_rp'][1:][mask])
-G_mags = np.array(refdf['G'][1:][mask])
+# ref_dists = (np.array((refdf['x'][0]-refdf['x'][1:])**2+(refdf['y'][0]-refdf['y'][1:])**2)**(0.5))[mask]
+# bp_rps = np.array(refdf['bp_rp'][1:][mask])
+# G_mags = np.array(refdf['G'][1:][mask])
 
-detector_half = np.zeros(len(mask), dtype='int')
-for i in range(len(ref_dists)):
-    if refdf['y'][i+1] > 1023:
-        detector_half[i] = 1
-detector_half = detector_half[mask]
+# detector_half = np.zeros(len(mask), dtype='int')
+# for i in range(len(ref_dists)):
+#     if refdf['y'][i+1] > 1023:
+#         detector_half[i] = 1
+# detector_half = detector_half[mask]
 
 # plt.figure()
 colors = ['tab:blue', 'tab:orange']
@@ -258,17 +258,17 @@ for i in range(len(masked_reg_corr)):
 # plt.tick_params(labelsize=14)
 # plt.tight_layout()
 
-plt.figure()
-color_inds = np.zeros(len(weights),dtype='int')
-color_inds[np.where(weights==0)[0]] = 1
-plt.scatter(G_mags, stddevs, color=np.array(colors)[color_inds])
-plt.axvline(refdf['G'][0],color='tab:red')
+# plt.figure()
+# color_inds = np.zeros(len(weights),dtype='int')
+# color_inds[np.where(weights==0)[0]] = 1
+# # plt.scatter(G_mags, stddevs, color=np.array(colors)[color_inds])
+# # plt.axvline(refdf['G'][0],color='tab:red')
 
-plt.xlabel('G mag', fontsize=16)
-plt.ylabel('$\sigma$ (ppt)', fontsize=16)
-plt.tick_params(labelsize=14)
-plt.tight_layout()
-breakpoint()
+# plt.xlabel('G mag', fontsize=16)
+# plt.ylabel('$\sigma$ (ppt)', fontsize=16)
+# plt.tick_params(labelsize=14)
+# plt.tight_layout()
+# breakpoint()
 
 # plt.figure()
 # for i in range(len(binned_fluxes)):

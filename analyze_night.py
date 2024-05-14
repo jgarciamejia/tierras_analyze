@@ -13,6 +13,7 @@ from matplotlib import gridspec
 from pathlib import Path 
 from scipy.optimize import curve_fit
 import pickle
+import time 
 
 def ref_selection(target_ind, sources, delta_target_rp=5, target_distance_limit=4000, max_refs=50):
 
@@ -44,9 +45,8 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	""" it's called "mearth_style" because it's inspired by the mearth pipeline """
 	""" this version works with fluxes """
 
-	D = 130 # cm 
-	H = 2306 # m 
-	sigma_s = 0.09*D**(-2/3)*airmasses**(7/4)*(2*exptimes)**(-1/2)*np.exp(-H/8000)
+	# calculate relative scintillation noise 
+	sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exptimes)**(-1/2)*np.exp(-2306/8000)
 
 	n_sources = flux.shape[1]
 	n_ims = flux.shape[0]
@@ -56,13 +56,8 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	flux[mask] = np.nan 
 	flux_err[mask] = np.nan
 
-	# flux_corr_save = np.zeros(n_ims)
-	# flux_err_corr_save = np.zeros(n_ims)
-	# alc_save = np.zeros(n_ims)
-	# alc_err_save = np.zeros(n_ims)
 	mask_save = np.zeros(n_ims, dtype='bool')
 	mask_save[np.where(mask)] = True
-	weights_save = np.zeros(flux.shape[1])
 
 	regressor_inds = np.arange(1,flux.shape[1]) # get the indices of the stars to use as the zero point calibrators; these represent the indices of the calibrators *in the data_dict arrays*
 
@@ -100,24 +95,22 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 
 	# do a 'crude' weighting loop to figure out which regressors, if any, should be totally discarded	
 	delta_weights = np.zeros(regressors.shape[1])+999 # initialize
-	threshold = 1e-4 # delta_weights must converge to this value for the loop to stop
+	threshold = 1e-3 # delta_weights must converge to this value for the loop to stop
 	weights_old = weights_init
 	full_ref_inds = np.arange(regressors.shape[1])
 	count = 0 
+
+	t1 = time.time()
 	while len(np.where(delta_weights>threshold)[0]) > 0:
 		stddevs_measured = np.zeros(regressors.shape[1])		
 		stddevs_expected = np.zeros_like(stddevs_measured) 
-		allen_slopes = np.zeros_like(stddevs_measured)
-		f_corr_save = np.zeros((n_ims, n_sources-1))
-		sigma_save = np.zeros_like(f_corr_save)
+		# f_corr_save = np.zeros((n_ims, n_sources-1))
+		# sigma_save = np.zeros_like(f_corr_save)
 		# loop over each regressor
 		for jj in range(regressors.shape[1]):
-			if weights_old[jj] == 0:
-				allen_slopes[jj] = np.inf
-				continue
 			F_t = regressors[:,jj]
 			N_t = regressors_err[:,jj]
-
+			
 			# make its zeropoint correction using the flux of all the *other* regressors
 			use_inds = np.delete(full_ref_inds, jj)
 
@@ -139,16 +132,17 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 			sigma_rel_flux= sigma_rel_flux/norm 
 			
 			# calculate total error on F_rel flux from sigma_rel_flux and sigma_scint			
-
+			
 			sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(len(use_inds)))
 			sigma_tot = np.sqrt(sigma_rel_flux**2 + sigma_scint**2)	
 
 			# record the standard deviation of the corrected flux
 			stddevs_measured[jj] = np.nanstd(F_corr)
 			stddevs_expected[jj] = np.nanmean(sigma_tot)
-			f_corr_save[:, jj]  = F_corr
-			sigma_save[:, jj] = sigma_tot	
+			# f_corr_save[:, jj]  = F_corr
+			# sigma_save[:, jj] = sigma_tot
 
+			
 		# update the weights using the measured standard deviations	
 
 		weights_new = 1/stddevs_measured**2
@@ -167,9 +161,9 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 
 	# the noise ratio threshold will depend on how many bad/variable reference stars were used in the ALC
 	# sigmaclip the noise ratios and set the upper limit to the n-sigma upper bound 
-	# v, l, h = sigmaclip(noise_ratios, 2, 2)
-	# weights[np.where(noise_ratios>h)[0]] = 0
-	weights[np.where(noise_ratios>5)[0]] = 0
+	v, l, h = sigmaclip(noise_ratios, 2, 2)
+	weights[np.where(noise_ratios>h)[0]] = 0
+	# weights[np.where(noise_ratios>5)[0]] = 0
 	weights /= sum(weights)
 	# weights[np.where(abs(-0.5-allen_slopes) > 0.3)] = 0 
 	# weights /= sum(weights)	
@@ -226,7 +220,7 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 			count += 1
 			if count == max_iters:
 				continue		
-
+		
 	weights = weights_new
 
 	# calculate the zero-point correction
@@ -246,9 +240,7 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# flux_err_corr = err_corr
 
 	weights = np.insert(weights, 0, 0)
-	# weights_save = weights
 
-	# return flux_corr, flux_err_corr, alc, alc_err, weights_save 
 	return weights, mask_save
 
 def allen_deviation(times, flux, flux_err):
