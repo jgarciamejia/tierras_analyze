@@ -90,9 +90,10 @@ def main(raw_args=None):
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
 	date_list = np.array(sorted(date_list, key=lambda x:int(x.split('/')[4]))) # sort on date so that everything is in order
 
+	# skip some nights of processing for TIC362144730
+	# TODO: automate this process 
 	if field == 'TIC362144730':
-		date_list = np.delete(date_list, [2,3,4])
-	# date_list = date_list[0:2]
+		date_list = np.delete(date_list, [2,3,4,19])
 
 	# date_list = np.array(date_list)[[0,-1]]
 	# read in the source df's from each night 
@@ -243,7 +244,6 @@ def main(raw_args=None):
 
 	# start_ind = np.where(common_source_ids == 4147120983934854400)[0][0]
 	
-	breakpoint()
 	avg_mearth_times = np.zeros(n_sources)
 	for tt in range(len(common_source_ids)):
 		tloop = time.time()
@@ -280,30 +280,30 @@ def main(raw_args=None):
 			mask = np.zeros(len(flux[i][:,tt]), dtype='int') # TODO: mask on unbinned data? 
 			mask[np.where(saturated_flags[i][:,inds[0]])] = True # mask out any saturated exposures for this source
 
+			# use the weights calculated in mearth_style to create the ALC 
 			alc = np.matmul(flux[i][:,inds], weights)
 			alc_err = np.sqrt(np.matmul(flux_err[i][:,inds]**2, weights**2))
 
-			# plt.figure()
-			# for j in range(flux_arr.shape[1]):
-			# 	if j == 0:
-			# 		plt.plot(times, flux_arr[:,j]/np.nanmedian(flux_arr[:,j]), zorder=1, color='k', marker='.')
-			# 	else:
-			# 		plt.plot(times, flux_arr[:,j]/np.nanmedian(flux_arr[:,j]), zorder=0, marker='.')
-			# plt.plot(times, alc/np.nanmedian(alc), zorder=1, color='r', marker='.')
-
-			# breakpoint()
-
+			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
 			target_flux = copy.deepcopy(flux[i][:,tt])
 			target_flux_err = copy.deepcopy(flux_err[i][:,tt])
 			target_flux[mask] = np.nan
 			target_flux_err[mask] = np.nan
 			corr_flux = target_flux / alc
-			corr_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
+			rel_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
 			
+			# normalize
 			norm = np.nanmedian(corr_flux)
 			corr_flux /= norm 
-			corr_flux_err /= norm
+			rel_flux_err /= norm
 
+			# inflate error by scintillation estimate (see Stefansson et al. 2017)
+			n_refs = len(np.where(weights != 0)[0])
+			sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exposure_times)**(-1/2)*np.exp(-2306/8000)
+			sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
+			corr_flux_err = np.sqrt(rel_flux_err**2 + sigma_scint**2)
+
+			# sigma clip
 			corr_flux_sc = sigma_clip(corr_flux).data
 			norm = np.nanmedian(corr_flux_sc)
 			corr_flux_sc /= norm 
@@ -315,6 +315,7 @@ def main(raw_args=None):
 			
 			med_stddevs[i] = np.nanmedian(stddevs)	
 
+			# if this light curve is better than the previous ones, store it for later
 			if med_stddevs[i] < best_med_stddev: 
 				best_med_stddev = med_stddevs[i]
 				best_phot_file = i 
@@ -346,8 +347,6 @@ def main(raw_args=None):
 
 				v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
 				use_inds = np.where((best_corr_flux>l)&(best_corr_flux<h))[0]
-
-				# fig, axes = plt.subplots(8, len(date_list), figsize=(24/6*len(date_list),20), sharey='row', gridspec_kw={'height_ratios':[1,2,1,1,1,1,1,2]})
 
 				fig = plt.figure(figsize=(24/6*len(date_list), 20))	
 				gs = gridspec.GridSpec(8,len(date_list),height_ratios=[2,2,1,1,1,1,1,2], figure=fig)
