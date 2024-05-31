@@ -23,11 +23,18 @@ import pyarrow as pa
 import pyarrow.parquet as pq 
 from astropy.stats import sigma_clip
 
-def identify_target_gaia_id(target):
+def identify_target_gaia_id(target, sources=None, x_pix=None, y_pix=None):
+	
 	if 'Gaia DR3' in target:
 		gaia_id = int(target.split('Gaia DR3 ')[1])
 		return gaia_id
 
+	if (x_pix is not None) and (y_pix) is not None:
+		x = np.array(sources['X pix'])
+		y = np.array(sources['Y pix'])
+		dists = ((x-x_pix)**2+(y-y_pix)**2)**0.5
+		return sources['source_id'][np.argmin(dists)] 
+	
 	objids = Simbad.query_objectids(target)
 	for i in range(len(objids)):
 		if 'Gaia DR3' in str(objids[i]).split('\n')[-1]:
@@ -71,6 +78,10 @@ def main(raw_args=None):
 	ap.add_argument("-overwrite", required=False, default=False, help="Whether or not to overwrite existing lc files.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
+	ap.add_argument("-target_x_pix", required=False, default=None, help="x pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-target_y_pix", required=False, default=None, help="y pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
+	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
 
 	args = ap.parse_args(raw_args)
 
@@ -80,20 +91,42 @@ def main(raw_args=None):
 	overwrite = t_or_f(args.overwrite)
 	email = t_or_f(args.email)
 	plot = t_or_f(args.plot)
+	targ_x_pix = args.target_x_pix
+	targ_y_pix = args.target_y_pix
+	same = t_or_f(args.SAME)
 
 	if args.target is None: 
 		target = field 
 	else:
 		target = args.target
+	
+
 
 	# identify dates on which this field was observed 
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
 	date_list = np.array(sorted(date_list, key=lambda x:int(x.split('/')[4]))) # sort on date so that everything is in order
+	
+	# if a set of use_nights has been specified, cut the date list to match 
+	if args.use_nights is not None:
+		use_nights = args.use_nights.replace(' ','').split(',')
+		dates_to_keep = []
+		for i in range(len(use_nights)):
+			for j in range(len(date_list)):
+				if use_nights[i] in date_list[j]:
+					dates_to_keep.append(j)
+					break
+		date_list = date_list[dates_to_keep]
 
 	# skip some nights of processing for TIC362144730
 	# TODO: automate this process 
 	if field == 'TIC362144730':
-		date_list = np.delete(date_list, [2,3,4,19])
+		dates = np.array([i.split('/')[4] for i in date_list])
+		bad_dates = ['20240519', '20240520']
+		dates_to_remove = []
+		for i in range(len(bad_dates)):
+			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
+		date_list = np.delete(date_list, dates_to_remove)
+		breakpoint()		
 
 	# date_list = np.array(date_list)[[0,-1]]
 	# read in the source df's from each night 
@@ -117,6 +150,7 @@ def main(raw_args=None):
 		inds_to_remove = np.array(inds_to_remove)
 		common_source_ids = np.delete(common_source_ids, inds_to_remove)
 
+	
 	# get the index mapping between the source dfs and the photometry source names
 	source_inds = []
 	for i in range(len(source_dfs)):
@@ -142,22 +176,22 @@ def main(raw_args=None):
 	filenames = np.zeros(n_ims, dtype='str')
 	ha = np.zeros(n_ims, dtype='float16')
 	humidity = np.zeros(n_ims, dtype='float16')
+	fwhm_x = np.zeros(n_ims, dtype='float16')
+	fwhm_y = np.zeros(n_ims, dtype='float16')
 	flux = np.zeros((n_dfs, n_ims, n_sources), dtype='float32')
 	flux_err = np.zeros_like(flux)
 	non_linear_flags = np.zeros_like(flux, dtype='int')
 	saturated_flags = np.zeros_like(flux, dtype='int')
-	sky = np.zeros_like(flux)
-	x = np.zeros_like(flux)
-	y = np.zeros_like(flux)
-	fwhm_x = np.zeros_like(flux)
-	fwhm_y = np.zeros_like(flux)
+	x = np.zeros((n_ims, n_sources), dtype='float32')
+	y = np.zeros_like(x)
+	sky = np.zeros_like(x)
 
 	times_list = []
 	start = 0
 
 	t1 = time.time()
 
-	ancillary_cols = ['Filename', 'BJD TDB', 'Airmass', 'Exposure Time', 'HA', 'Dome Humid']
+	ancillary_cols = ['Filename', 'BJD TDB', 'Airmass', 'Exposure Time', 'HA', 'Dome Humid', 'FWHM X', 'FWHM Y']
 
 	for i in range(len(date_list)):
 		print(f'Reading in photometry from {date_list[i]} (date {i+1} of {len(date_list)}).')
@@ -170,7 +204,7 @@ def main(raw_args=None):
 		n_dfs = len(phot_files)
 
 		ancillary_tab = pq.read_table(ancillary_file, columns=ancillary_cols)
-		
+
 		for j in range(n_dfs):
 			# only read in the necessary columns from the data files to save a lot of time in very crowded fields
 			use_cols = []
@@ -182,8 +216,8 @@ def main(raw_args=None):
 				use_cols.append(f'S{source_inds[i][k]} Sky')
 				use_cols.append(f'S{source_inds[i][k]} X')
 				use_cols.append(f'S{source_inds[i][k]} Y')
-				use_cols.append(f'S{source_inds[i][k]} X FWHM')
-				use_cols.append(f'S{source_inds[i][k]} Y FWHM')
+				# use_cols.append(f'S{source_inds[i][k]} X FWHM')
+				# use_cols.append(f'S{source_inds[i][k]} Y FWHM')
 
 			data_tab = pq.read_table(phot_files[j], columns=use_cols, memory_map=True)
 			stop = start+len(data_tab)
@@ -196,28 +230,74 @@ def main(raw_args=None):
 			filenames[start:stop] = np.array(ancillary_tab['Filename'])
 			ha[start:stop] = np.array(ancillary_tab['HA'])
 			humidity[start:stop] = np.array(ancillary_tab['Dome Humid'])
+			fwhm_x[start:stop] = np.array(ancillary_tab['FWHM X'])
+			fwhm_y[start:stop] = np.array(ancillary_tab['FWHM Y'])
 			
 			for k in range(n_sources):
 				flux[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Source-Sky'])
 				flux_err[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Source-Sky Err'])
 				non_linear_flags[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} NL Flag'])
 				saturated_flags[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Sat Flag'])
-				sky[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Sky'])
-				x[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} X'])
-				y[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Y'])
-				fwhm_x[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} X FWHM'])
-				fwhm_y[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Y FWHM'])
+				if j == 0:
+					x[start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} X'])
+					y[start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Y'])
+					sky[start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Sky'])
+
 		start = stop
 	print(f'Read-in: {time.time()-t1}')
+
+	x_offset = int(np.floor(times[0]))
+	times -= x_offset
+
+	x_deviations = np.median(x - np.nanmedian(x, axis=0), axis=1)
+	y_deviations = np.median(y - np.nanmedian(y, axis=0), axis=1)
+	median_sky = np.median(sky, axis=1)/exposure_times
+	
+	# optionally restrict to SAME 
+	if same: 
+		same_mask = np.zeros(len(fwhm_x), dtype='int')
+
+		fwhm_inds = np.where(fwhm_x > 4)[0]
+		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
+		airmass_inds = np.where(airmasses > 2.0)[0]
+		sky_inds = np.where(median_sky > 5)[0]
+		humidity_inds = np.where(humidity > 50)[0]
+		same_mask[fwhm_inds] = 1
+		same_mask[pos_inds] = 1
+		same_mask[airmass_inds] = 1
+		same_mask[sky_inds] = 1
+		same_mask[humidity_inds] = 1
+
+		print(f'Restrictions cut to {len(np.where(same_mask == 0)[0])} SAME exposures out of {len(x_deviations)} total exposures.')
+		mask = same_mask==1
+
+		breakpoint()
+
+		# times[mask] = np.nan
+		airmasses[mask] = np.nan
+		exposure_times[mask] = np.nan
+		filenames[mask] = np.nan
+		ha[mask] = np.nan
+		humidity[mask] = np.nan
+		fwhm_x[mask] = np.nan 
+		fwhm_y[mask] = np.nan 
+		flux[:,mask,:] = np.nan 
+		flux_err[:,mask,:] = np.nan 
+		x[mask,:] = np.nan 
+		y[mask,:] = np.nan 
+		sky[mask,:] = np.nan
 
 	# determine maximum time range covered by all of the nights, we'll need this for plotting 
 	time_deltas = [i[-1]-i[0] for i in times_list]
 	x_range = np.nanmax(time_deltas)
-	
-	tierras_target_id = identify_target_gaia_id(field)
 
+	try:
+		tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix)
+	except:
+		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
+	
 	# # bin_inds = tierras_binner_inds(times, bin_mins=5)
-	ppb = 10 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
+	ppb = 4 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
 	n_bins = int(np.ceil(n_ims/ppb))
 	bin_inds = []
 	for i in range(n_bins):
@@ -239,50 +319,94 @@ def main(raw_args=None):
 		binned_exposure_time[i] = np.nansum(exposure_times[bin_inds[i]])
 		for j in range(n_dfs):
 			binned_flux[j,i,:] = np.nanmean(flux[j,bin_inds[i]], axis=0)
-			binned_flux_err[j,i,:] = np.nanstd(flux[j,bin_inds[i]],axis=0)
+			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,bin_inds[i]],axis=0)/np.sqrt(len(bin_inds[i]))
 			binned_nl_flags[j,i,np.sum(non_linear_flags[j,bin_inds[i]], axis=0)>1] = 1
 
 	# start_ind = np.where(common_source_ids == 4147120983934854400)[0][0]
 	
 	avg_mearth_times = np.zeros(n_sources)
+
+	# choose a set of references and generate weights
+	max_refs = 1000
+	if len(common_source_ids) > max_refs:
+		ref_gaia_ids = common_source_ids[0:max_refs]
+		ref_inds = np.arange(max_refs)
+	else:
+		ref_gaia_ids = common_source_ids
+		ref_inds = np.arange(len(common_source_ids))
+
+	print(f'Weighting {len(ref_inds)} reference stars...')
+	weights_arr = np.zeros((len(ref_inds), n_dfs))
+	for i in range(n_dfs):
+		print(f'{i+1} of {n_dfs}')
+		flux_arr = binned_flux[i][:,ref_inds]
+		flux_err_arr = binned_flux_err[i][:,ref_inds]
+		nl_flag_arr = binned_nl_flags[i][:,ref_inds]
+		weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+		weights_arr[:, i] = weights
+
+	# save a csv with the weights 
+	weights_dict = {'Ref ID':common_source_ids[ref_inds]}
+	for i in range(n_dfs):
+		ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.')[0]
+		weights_dict[ap_size] = weights_arr[:,i]
+	weights_df = pd.DataFrame(weights_dict)
+	if not os.path.exists(f'/data/tierras/fields/{field}/sources'):
+		os.mkdir(f'/data/tierras/fields/{field}/sources')
+		set_tierras_permissions(f'/data/tierras/fields/{field}/sources')
+	weights_df.to_csv(f'/data/tierras/fields/{field}/sources/weights.csv', index=0)
+	set_tierras_permissions(f'/data/tierras/fields/{field}/sources/weights.csv')
+	
 	for tt in range(len(common_source_ids)):
 		tloop = time.time()
 		
 		if common_source_ids[tt] == tierras_target_id:
 			target = field
+			target_gaia_id = tierras_target_id 
 			plot = True
 		else:
 			target = 'Gaia DR3 '+str(common_source_ids[tt])
-			# plot = False
-			plot = True # TESTING!!!!
+			target_gaia_id = identify_target_gaia_id(target)
+			plot = False 
+		
 		print(f'Doing {target}, source {tt+1} of {len(common_source_ids)}.')
-
-		target_gaia_id = identify_target_gaia_id(target)
-
-		ref_gaia_ids = ref_selection(target_gaia_id, source_dfs[0], common_source_ids, max_refs=50)
-		inds = np.where(target_gaia_id == common_source_ids)[0]
-		for i in range(len(ref_gaia_ids)):
-			inds = np.append(inds, np.where(ref_gaia_ids[i] == common_source_ids)[0])
+		# ref_gaia_ids = ref_selection(target_gaia_id, source_dfs[0], common_source_ids, max_refs=100)
+		# inds = np.where(target_gaia_id == common_source_ids)[0]
+		# for i in range(len(ref_gaia_ids)):
+		# 	inds = np.append(inds, np.where(ref_gaia_ids[i] == common_source_ids)[0])
 
 		med_stddevs = np.zeros(n_dfs)
 		best_med_stddev = 9999999.
 		mearth_style_times = np.zeros(n_dfs)
 		best_corr_flux = None
 		for i in range(n_dfs):			
-			tmearth = time.time()
-			flux_arr = binned_flux[i][:,inds]
-			flux_err_arr = binned_flux_err[i][:,inds]
-			nl_flag_arr = binned_nl_flags[i][:,inds]
-			weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time)
-			mearth_style_times[i] = time.time()-tmearth
-
+			# tmearth = time.time()
+			# flux_arr = binned_flux[i][:,inds]
+			# flux_err_arr = binned_flux_err[i][:,inds]
+			# nl_flag_arr = binned_nl_flags[i][:,inds]
+			# weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time)
 			
-			mask = np.zeros(len(flux[i][:,tt]), dtype='int') # TODO: mask on unbinned data? 
-			mask[np.where(saturated_flags[i][:,inds[0]])] = True # mask out any saturated exposures for this source
+			# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
+			if target_gaia_id in ref_gaia_ids:
+				if i == 0:
+					weight_ind = np.where(ref_gaia_ids == target_gaia_id)[0][0]
+				weights = copy.deepcopy(weights_arr[:,i])
+				weights[weight_ind] = 0
+				weights /= np.nansum(weights)
+			else:
+				weights = copy.deepcopy(weights_arr[:,i])
+
+			# mearth_style_times[i] = time.time()-tmearth
+				
+			mask = np.zeros(len(flux[i][:,tt]), dtype='int') 
+			mask[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
+			if sum(mask) == len(mask):
+				print(f'All exposures saturated for {target_gaia_id}, skipping!')
+				break
 
 			# use the weights calculated in mearth_style to create the ALC 
-			alc = np.matmul(flux[i][:,inds], weights)
-			alc_err = np.sqrt(np.matmul(flux_err[i][:,inds]**2, weights**2))
+			alc = np.matmul(flux[i][:,ref_inds], weights)
+			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds]**2, weights**2))
 
 			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
 			target_flux = copy.deepcopy(flux[i][:,tt])
@@ -334,16 +458,17 @@ def main(raw_args=None):
 			med_std_over_theo = np.nanmedian(std/theo)
 			if med_std_over_theo > 10:
 				print('Possible variable!')
-				plot = True
-						
+				plot = False
+			
+
 			# do a plot if this is the tierras target 
 
-			if (target == field) or plot:
+			if plot:
 				plt.ioff()
 
 				use_inds = ~np.isnan(best_corr_flux)
 
-				raw_flux = flux[best_phot_file,:,tt]
+				# raw_flux = flux[best_phot_file,:,tt]
 
 				v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
 				use_inds = np.where((best_corr_flux>l)&(best_corr_flux<h))[0]
@@ -353,8 +478,7 @@ def main(raw_args=None):
 
 				ax1 = fig.add_subplot(gs[0,:]) # linear time light curve 					
 
-				x_offset = int(np.floor(times[0]))
-				times -= x_offset
+				# times -= x_offset
 
 				ax1.plot(times[use_inds], best_corr_flux[use_inds], marker='.', color='#b0b0b0', ls='')
 				ax1.set_ylabel('Corr. Flux', fontsize=14)
@@ -362,6 +486,8 @@ def main(raw_args=None):
 				ax1.set_xlim(times[use_inds[0]]-1/24, times[use_inds[-1]]+1/24)
 
 				for i in range(len(date_list)):
+					use_inds_night = np.where((times >= times_list[i][0]) & (times <= times_list[i][-1]))[0]
+					
 					if len(date_list) == 1:
 						ax2 = fig.add_subplot(gs[1]) 
 						ax3 = fig.add_subplot(gs[2])
@@ -390,20 +516,34 @@ def main(raw_args=None):
 					# ax[0].plot(times[use_inds], raw_flux[use_inds]/np.nanmedian(raw_flux[use_inds]), 'k.', label='Target')
 					# ax[0].plot(times[use_inds], best_alc[use_inds]/np.nanmedian(best_alc[use_inds]), 'r.', label='ALC')
 
+					
 					ax2.errorbar(times[use_inds], best_corr_flux[use_inds], best_corr_flux_err[use_inds], marker='.', color='#b0b0b0', ls='')
+
+					# plot nightly median 
+					night_times = times[use_inds_night]
+					night_flux = best_corr_flux[use_inds_night]
+					nan_inds = ~np.isnan(night_flux)
+					night_times = night_times[nan_inds]
+					night_flux = night_flux[nan_inds]
+					v, l, h = sigmaclip(night_flux)
+					night_inds = np.where((night_flux > l) & (night_flux < h))[0]
+
+					ax1.errorbar(np.nanmedian(night_times[night_inds]), np.nanmean(night_flux[night_inds]), 1.2533*np.nanstd(night_flux[night_inds])/np.sqrt(len(night_inds)), marker='o', color='k', ecolor='k', zorder=4, ls='')
+
+					ax2.errorbar(np.nanmedian(night_times[night_inds]), np.nanmean(night_flux[night_inds]), 1.2533*np.nanstd(night_flux[night_inds])/np.sqrt(len(night_inds)), marker='o', color='k', ecolor='k', zorder=4, ls='')
 
 					ax3.plot(times, airmasses, marker='.', ls='')	
 					# ax_ha = ax[2].twinx()
 					# ax_ha.plot(times, ha, color='tab:orange')
 
-					ax4.plot(times, sky[best_phot_file][:,0]/exposure_times, color='tab:cyan', marker='.', ls='')
+					ax4.plot(times, sky[:,0]/exposure_times, color='tab:cyan', marker='.', ls='')
 
-					ax5.plot(times, x[best_phot_file][:,0]-np.nanmedian(x[best_phot_file][:,0]), color='tab:green',label='X-med(X)', marker='.', ls='')
-					ax5.plot(times, y[best_phot_file][:,0]-np.nanmedian(y[best_phot_file][:,0]), color='tab:red',label='Y-med(Y)', marker='.', ls='')
+					ax5.plot(times, x[:,0]-np.nanmedian(x[:,0]), color='tab:green',label='X-med(X)', marker='.', ls='')
+					ax5.plot(times, y[:,0]-np.nanmedian(y[:,0]), color='tab:red',label='Y-med(Y)', marker='.', ls='')
 					ax5.set_ylim(-15,15)
 
-					ax6.plot(times, fwhm_x[best_phot_file][:,0], color='tab:pink', label='X', marker='.', ls='')
-					ax6.plot(times, fwhm_y[best_phot_file][:,0], color='tab:purple',label='Y', marker='.', ls='')	
+					ax6.plot(times, fwhm_x, color='tab:pink', label='X', marker='.', ls='')
+					ax6.plot(times, fwhm_y, color='tab:purple',label='Y', marker='.', ls='')	
 					
 					ax7.plot(times, humidity, color='tab:brown', marker='.', ls='')
 					
@@ -422,7 +562,7 @@ def main(raw_args=None):
 						ax6.set_ylabel('FWHM\n(")', fontsize=14)
 						ax7.set_ylabel('Dome Humid.\n(%)',fontsize=14)
 						ax8.set_ylabel('$\sigma$ (ppm)', fontsize=14)
-					
+
 					ax2.set_xlim(times_list[i][0], times_list[i][0]+x_range)
 					ax3.set_xlim(times_list[i][0], times_list[i][0]+x_range)
 					ax4.set_xlim(times_list[i][0], times_list[i][0]+x_range)
@@ -527,38 +667,14 @@ def main(raw_args=None):
 				plt.subplots_adjust(hspace=0.1,wspace=0.05,left=0.05,right=0.92,bottom=0.05,top=0.92)
 				plt.tight_layout()
 				
-				# write out the best light curve 
-				output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err}
-				output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/')
-				if not os.path.exists(output_path.parent.parent):
-					os.mkdir(output_path.parent.parent)
-					set_tierras_permissions(output_path.parent.parent)
-				if not os.path.exists(output_path.parent):
-					os.mkdir(output_path.parent)
-					set_tierras_permissions(output_path.parent)
-				if not os.path.exists(output_path):
-					os.mkdir(output_path)
-					set_tierras_permissions(output_path)
-
-				best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
-
-				if os.path.exists(output_path/f'{target}_global_lc.csv'):
-					os.remove(output_path/f'{target}_global_lc.csv')
 				
-				# save the plot
-				filename = open(output_path/f'{target}_global_lc.csv', 'a')
-				filename.write(f'# this light curve was made using {best_phot_style}\n' )
-				output_df = pd.DataFrame(output_dict)
-				output_df.to_csv(filename, index=0, na_rep=np.nan)
-				filename.close()
-				set_tierras_permissions(output_path/f'{target}_global_lc.csv')
 
 				output_path = Path(f'/data/tierras/fields/{field}/sources/plots/')
 				if not os.path.exists(output_path):
 					os.mkdir(output_path)
 					set_tierras_permissions(output_path)
 				plt.savefig(output_path/f'{med_std_over_theo:.2f}_{target}_global_summary.png', dpi=200)
-				set_tierras_permissions(output_path/f'{target}_global_summary.png')
+				set_tierras_permissions(output_path/f'{med_std_over_theo:.2f}_{target}_global_summary.png')
 				plt.close()
 				plt.ion()
 
@@ -571,10 +687,35 @@ def main(raw_args=None):
 					emails = 'juliana.garcia-mejia@cfa.harvard.edu patrick.tamburo@cfa.harvard.edu'
 					os.system('echo | mutt {} -s {} -a {}'.format(emails,subject,append))
 
+			# write out the best light curve 
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Airmass':airmasses}
+			output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/')
+			if not os.path.exists(output_path.parent.parent):
+				os.mkdir(output_path.parent.parent)
+				set_tierras_permissions(output_path.parent.parent)
+			if not os.path.exists(output_path.parent):
+				os.mkdir(output_path.parent)
+				set_tierras_permissions(output_path.parent)
+			if not os.path.exists(output_path):
+				os.mkdir(output_path)
+				set_tierras_permissions(output_path)
+
+			best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
+
+			if os.path.exists(output_path/f'{target}_global_lc.csv'):
+				os.remove(output_path/f'{target}_global_lc.csv')
+			
+			filename = open(output_path/f'{target}_global_lc.csv', 'a')
+			filename.write(f'# this light curve was made using {best_phot_style}\n' )
+			output_df = pd.DataFrame(output_dict)
+			output_df.to_csv(filename, index=0, na_rep=np.nan)
+			filename.close()
+			set_tierras_permissions(output_path/f'{target}_global_lc.csv')
+
 			gc.collect() # do garbage collection to prevent memory leaks 
 			print(f'tloop: {time.time()-tloop:.1f}')
 			avg_mearth_times[tt] = np.mean(mearth_style_times)
-			print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
+			# print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
 		
 if __name__ == '__main__':
 	main()
