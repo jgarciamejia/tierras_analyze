@@ -5,51 +5,52 @@ import matplotlib.pyplot as plt
 plt.ion()
 from scipy.stats import sigmaclip
 
-def periodogram(x, y, y_err, pers=None):
+def periodogram(x, y, y_err, pers=None, sc=False):
     # remove NaNs
     use_inds = ~np.isnan(y)
     x = x[use_inds]
     y = y[use_inds]
     y_err = y_err[use_inds]
 
-    # get times of each night 
-    x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
-    x_breaks = np.where(x_deltas > 0.5)[0]
-    x_list = []
-    for i in range(len(x_breaks)):
-        if i == 0:
-            x_list.append(x[0:x_breaks[i]+1])
-        else:
-            x_list.append(x[x_breaks[i-1]+1:x_breaks[i]+1])
-    x_list.append(x[x_breaks[-1]+1:len(x)])
+    if sc:
+        # get times of each night 
+        x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
+        x_breaks = np.where(x_deltas > 0.5)[0]
+        x_list = []
+        for i in range(len(x_breaks)):
+            if i == 0:
+                x_list.append(x[0:x_breaks[i]+1])
+            else:
+                x_list.append(x[x_breaks[i-1]+1:x_breaks[i]+1])
+        x_list.append(x[x_breaks[-1]+1:len(x)])
 
-    x_list_2 = [] 
-    y_list = []
-    y_err_list = []
-    # sigmaclip each night 
-    for i in range(len(x_list)):
-        use_inds = np.where((x>=x_list[i][0])&(x<=x_list[i][-1]))[0]
-        v, l, h = sigmaclip(y[use_inds], 3, 3) # TODO: should median filter y first 
-        sc_inds = np.where((y[use_inds] > l) & (y[use_inds] < h))[0]
-        x_list_2.extend(x[use_inds][sc_inds])
-        y_list.extend(y[use_inds][sc_inds])
-        y_err_list.extend(y_err[use_inds][sc_inds])
-    
-    x = np.array(x_list_2)
-    y = np.array(y_list)
-    y_err = np.array(y_err_list)
+        x_list_2 = [] 
+        y_list = []
+        y_err_list = []
+        # sigmaclip each night 
+        for i in range(len(x_list)):
+            use_inds = np.where((x>=x_list[i][0])&(x<=x_list[i][-1]))[0]
+            v, l, h = sigmaclip(y[use_inds], 3, 3) # TODO: should median filter y first 
+            sc_inds = np.where((y[use_inds] > l) & (y[use_inds] < h))[0]
+            x_list_2.extend(x[use_inds][sc_inds])
+            y_list.extend(y[use_inds][sc_inds])
+            y_err_list.extend(y_err[use_inds][sc_inds])
+        
+        x = np.array(x_list_2)
+        y = np.array(y_list)
+        y_err = np.array(y_err_list)
 
-    v, l, h = sigmaclip(y)
-    use_inds = np.where((y>l)&(y<h))[0]
-    x = x[use_inds]
-    y = y[use_inds]
-    y_err = y_err[use_inds]
+        v, l, h = sigmaclip(y)
+        use_inds = np.where((y>l)&(y<h))[0]
+        x = x[use_inds]
+        y = y[use_inds]
+        y_err = y_err[use_inds]
 
-    v, l, h = sigmaclip(y_err)
-    use_inds = np.where(y_err<h)[0]
-    x = x[use_inds]
-    y = y[use_inds]
-    y_err = y_err[use_inds] 
+        v, l, h = sigmaclip(y_err)
+        use_inds = np.where(y_err<h)[0]
+        x = x[use_inds]
+        y = y[use_inds]
+        y_err = y_err[use_inds] 
     
     x -= x[0]
 
@@ -111,21 +112,54 @@ def periodogram_plot(x, y, y_err, per, power, phase=False, color_by_time=False):
 
 if __name__ == '__main__':
     field = 'TIC362144730'
-    target = 'Gaia DR3 4147111775525655040'
-    pers = np.arange(1,3,1/86400)
     
-    target = 'Gaia DR3 4147122323964560256'
-    pers = np.arange(0.075, 0.085, 1/86400)
+    # target = 'Gaia DR3 4147111775525655040'
+    # pers = np.arange(1,3,1/86400)
+    # sc = True
+    
+    # target = 'Gaia DR3 4147122323964560256'
+    # pers = np.arange(0.075, 0.085, 1/86400)
+    # sc = True
 
     # target = 'Gaia DR3 4146918334529950720'
     # pers = None
+    # sc = True
 
-    df = pd.read_csv(f'/data/tierras/fields/{field}/sources/{target}/{target}_global_lc.csv', comment='#')
+    # target = 'Gaia DR3 4147119923100810880'
+    # pers = np.arange(0.273, .274, 1/86400)
+    # #pers = None
+    # sc = True
+
+    # target = 'Gaia DR3 4147111814201906944'
+    # pers = None
+    # sc = False
+
+    # target = 'Gaia DR3 4147111775525655040'
+    # pers = None 
+    # sc = True
+
+    # target = 'TIC362144730'
+    # pers =  np.arange(0.7, 0.9, 1/86400)
+    # sc = True
+
+    # target = 'Gaia DR3 4147120404136618752'
+    # pers = np.arange(2,2.1,1/86400)
+    # sc = True 
+
+    # target = 'Gaia DR3 4146920013827132928'
+    # pers = None
+    # sc = True 
+
+    target = 'Gaia DR3 4147120983934854400'
+    pers = np.arange(0.6, 1.5, 1/86400)
+    sc = True
+    
+    df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{target}_global_lc.csv', comment='#')
     x = np.array(df['BJD TDB'])
     y = np.array(df['Flux'])
     y_err = np.array(df['Flux Error'])
 
-    x, y, y_err, per, freq, power = periodogram(x, y, y_err, pers=pers)
+    x, y, y_err, per, freq, power = periodogram(x, y, y_err, pers=pers, sc=sc)
     periodogram_plot(x, y, y_err, per, power, phase=True, color_by_time=True)
 
    
