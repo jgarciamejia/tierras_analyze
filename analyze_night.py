@@ -16,6 +16,9 @@ import pickle
 import time 
 import pyarrow.parquet as pq 
 from astropy.stats import sigma_clip
+import gc
+import warnings
+warnings.filterwarnings('ignore')
 
 def ref_selection(target_ind, sources, delta_target_rp=5, target_distance_limit=4000, max_refs=50):
 
@@ -266,212 +269,6 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# flux_err_corr = err_corr
 
 	# weights = np.insert(weights, 0, 0)
-	return weights, mask_save
-
-def mearth_style_pat_weighted_flux_old(flux, flux_err, non_linear_flag, airmasses, exptimes, max_iters=20):
-
-	""" Use the comparison stars to derive a frame-by-frame zero-point magnitude. Also filter and mask bad cadences """
-	""" it's called "mearth_style" because it's inspired by the mearth pipeline """
-	""" this version works with fluxes 
-		it assumes the target is the 0th entry in the flux/flux_err arrays 
-	"""
-
-	# calculate relative scintillation noise 
-	sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exptimes)**(-1/2)*np.exp(-2306/8000)
-
-	n_sources = flux.shape[1]
-	n_ims = flux.shape[0]
-
-	# mask any cadences where the flux is negative for any of the sources 
-	mask = np.any(flux < 0,axis=1)
-	flux[mask] = np.nan 
-	flux_err[mask] = np.nan
-
-	mask_save = np.zeros(n_ims, dtype='bool')
-	mask_save[np.where(mask)] = True
-
-	regressor_inds = np.arange(1,flux.shape[1]) # get the indices of the stars to use as the zero point calibrators; these represent the indices of the calibrators *in the data_dict arrays*
-
-	# grab target and source fluxes and apply initial mask 
-	target_flux = flux[:,0]
-	target_flux_err = flux_err[:,0]
-	regressors = flux[:,regressor_inds]
-	regressors_err = flux_err[:,regressor_inds]
-	nl_flags = non_linear_flag[:,regressor_inds]
-
-	tot_regressor = np.sum(regressors, axis=1)  # the total regressor flux at each time point = sum of comp star fluxes in each exposure
-
-	# identify cadences with "low" flux by looking at normalized summed reference star fluxes
-	zp0s = tot_regressor/np.nanmedian(tot_regressor) 	
-	mask = np.zeros_like(zp0s, dtype='bool')  # initialize another bad data mask
-	mask[np.where(zp0s < 0.25)[0]] = 1  # if regressor flux is decremented by 75% or more, this cadence is bad
-	target_flux[mask] = np.nan 
-	target_flux_err[mask] = np.nan 
-	regressors[mask] = np.nan
-	regressors_err[mask] = np.nan
-	mask_save[np.where(mask)] = True
-
-	# repeat the cs estimate now that we've masked out the bad cadences
-	# phot_regressor = np.nanpercentile(regressors, 90, axis=1)  # estimate photometric flux level for each star
-	norms = np.nanmedian(regressors, axis=0)
-	# regressors_norm = regressors / norms
-	regressors_err_norm = regressors_err / norms
-
-	weights_init = 1/(np.nanmedian(regressors_err_norm,axis=0)**2)
-
-	#de-weight references with ANY non-linear frames 
-	nl_source_inds = np.sum(nl_flags, axis=0) > 0	
-	weights_init[nl_source_inds] = 0
-	weights_init /= np.nansum(weights_init)
-
-	# do a 'crude' weighting loop to figure out which regressors, if any, should be totally discarded	
-	delta_weights = np.zeros(regressors.shape[1])+999 # initialize
-	threshold = 1e-3 # delta_weights must converge to this value for the loop to stop
-	weights_old = weights_init
-	full_ref_inds = np.arange(regressors.shape[1])
-	count = 0 
-
-	t1 = time.time()
-	while len(np.where(delta_weights>threshold)[0]) > 0:
-		stddevs_measured = np.zeros(regressors.shape[1])		
-		stddevs_expected = np.zeros_like(stddevs_measured) 
-		# f_corr_save = np.zeros((n_ims, n_sources-1))
-		# sigma_save = np.zeros_like(f_corr_save)
-		# loop over each regressor
-		for jj in range(regressors.shape[1]):
-			F_t = regressors[:,jj]
-			N_t = regressors_err[:,jj]
-			
-			# make its zeropoint correction using the flux of all the *other* regressors
-			use_inds = np.delete(full_ref_inds, jj)
-
-			# re-normalize the weights to sum to one
-			weights_wo_jj = weights_old[use_inds]
-			weights_wo_jj /= np.nansum(weights_wo_jj)
-
-			# create a zeropoint correction using those weights 
-			F_e = np.matmul(regressors[:,use_inds],weights_wo_jj)
-			N_e = np.sqrt(np.matmul(regressors_err[:,use_inds]**2, weights_wo_jj**2))
-			
-			# calculate the relative flux 
-			F_rel_flux = F_t / F_e
-			sigma_rel_flux = np.sqrt((N_t/F_e)**2 + (F_t*N_e/(F_e**2))**2)
-
-			# renormalize 
-			norm = np.nanmedian(F_rel_flux)
-			F_corr = F_rel_flux/norm 
-			sigma_rel_flux= sigma_rel_flux/norm 
-			
-			# calculate total error on F_rel flux from sigma_rel_flux and sigma_scint			
-			
-			sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(len(use_inds)))
-			sigma_tot = np.sqrt(sigma_rel_flux**2 + sigma_scint**2)	
-
-			# record the standard deviation of the corrected flux
-			stddevs_measured[jj] = np.nanstd(F_corr)
-			stddevs_expected[jj] = np.nanmean(sigma_tot)
-			# f_corr_save[:, jj]  = F_corr
-			# sigma_save[:, jj] = sigma_tot
-
-			
-		# update the weights using the measured standard deviations	
-
-		weights_new = 1/stddevs_measured**2
-		weights_new /= np.sum(weights_new[~np.isinf(weights_new)])			
-		weights_new[np.isinf(weights_new)] = 0
-		weights_new /= np.sum(weights_new)
-		delta_weights = abs(weights_new-weights_old)
-		weights_old = weights_new
-		count += 1 
-		if count == max_iters:
-			continue	
-
-	weights = weights_new
-	# determine if any references should be totally thrown out based on the ratio of their measured/expected noise
-	noise_ratios = stddevs_measured/stddevs_expected
-
-	# the noise ratio threshold will depend on how many bad/variable reference stars were used in the ALC
-	# sigmaclip the noise ratios and set the upper limit to the n-sigma upper bound 
-	v, l, h = sigmaclip(noise_ratios, 2, 2)
-	weights[np.where(noise_ratios>h)[0]] = 0
-	# weights[np.where(noise_ratios>5)[0]] = 0
-	weights /= sum(weights)
-	# weights[np.where(abs(-0.5-allen_slopes) > 0.3)] = 0 
-	# weights /= sum(weights)	
-
-	if len(np.where(weights == 0)[0]) > 0:
-		# now repeat the weighting loop with the bad refs removed 
-		delta_weights = np.zeros(regressors.shape[1])+999 # initialize
-		threshold = 1e-6 # delta_weights must converge to this value for the loop to stop
-		weights_old = weights
-		full_ref_inds = np.arange(regressors.shape[1])
-		count = 0
-		while len(np.where(delta_weights>threshold)[0]) > 0:
-			stddevs_measured = np.zeros(regressors.shape[1])
-			stddevs_expected = np.zeros_like(stddevs_measured)
-
-			for jj in range(regressors.shape[1]):
-				if weights_old[jj] == 0:
-					continue
-
-				F_t = regressors[:,jj]
-				N_t = regressors[:,jj]
-
-				use_inds = np.delete(full_ref_inds, jj)
-				weights_wo_jj = weights_old[use_inds]
-				weights_wo_jj /= np.nansum(weights_wo_jj)
-				
-				# create a zeropoint correction using those weights 
-				F_e = np.matmul(regressors[:,use_inds], weights_wo_jj)
-				N_e = np.sqrt(np.matmul(regressors_err[:,use_inds]**2, weights_wo_jj**2))
-
-				# calculate the relative flux 
-				F_rel_flux = F_t / F_e
-				sigma_rel_flux = np.sqrt((N_t/F_e)**2 + (F_t*N_e/(F_e**2))**2)
-
-				# renormalize
-				norm = np.nanmedian(F_rel_flux)
-				F_corr = F_rel_flux/norm 
-				sigma_rel_flux = sigma_rel_flux/norm 	
-	
-				# calculate total error on F_rel flux from sigma_rel_flux and sigma_scint				
-				sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(len(use_inds)))
-				sigma_tot = np.sqrt(sigma_rel_flux**2 + sigma_scint**2)
-
-
-				# record the standard deviation of the corrected flux
-				stddevs_measured[jj] = np.nanstd(F_corr)
-				stddevs_expected[jj] = np.nanmean(sigma_tot)
-
-			weights_new = 1/(stddevs_measured**2)
-			weights_new /= np.sum(weights_new[~np.isinf(weights_new)])
-			weights_new[np.isinf(weights_new)] = 0
-			delta_weights = abs(weights_new-weights_old)
-			weights_old = weights_new
-			count += 1
-			if count == max_iters:
-				continue		
-		
-	weights = weights_new
-
-	# calculate the zero-point correction
-
-	# F_e = np.matmul(regressors, weights)
-	# N_e = np.sqrt(np.matmul(regressors_err**2, weights**2))	
-	# flux_corr = target_flux / F_e
-	# err_corr = np.sqrt((target_flux_err/F_e)**2 + (target_flux*N_e/(F_e**2))**2)
-
-	# # renormalize
-	# norm = np.nanmedian(flux_corr)
-	# flux_corr /= norm 
-	# err_corr /= norm 
-
-	# alc = F_e
-	# alc_err = N_e 
-	# flux_err_corr = err_corr
-
-	weights = np.insert(weights, 0, 0)
-
 	return weights, mask_save
 
 def allen_deviation(times, flux, flux_err):
@@ -824,7 +621,6 @@ def make_lc_path(lc_path):
 		os.mkdir(lc_path)
 		set_tierras_permissions(lc_path)
 
-
 def identify_target_gaia_id(target, sources=None, x_pix=None, y_pix=None):
 	
 	if 'Gaia DR3' in target:
@@ -852,6 +648,10 @@ def main(raw_args=None):
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
 	ap.add_argument("-overwrite", required=False, default=False, help="Whether or not to overwrite existing lc files.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
+	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
+	ap.add_argument("-target_x_pix", required=False, default=None, help="x pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-target_y_pix", required=False, default=None, help="y pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 
 	args = ap.parse_args(raw_args)
 
@@ -859,116 +659,281 @@ def main(raw_args=None):
 	date = args.date
 	field = args.field
 	ffname = args.ffname
-	overwrite = t_or_f(args.overwrite)
 	email = t_or_f(args.email)
+	plot = t_or_f(args.plot)
+	targ_x_pix = args.target_x_pix
+	targ_y_pix = args.target_y_pix
+	same = t_or_f(args.SAME)
 
-	phot_path = f'/data/tierras/photometry/{date}/{field}/{ffname}'
-	phot_files = np.array(glob(phot_path+'/*ap_phot*.parquet'))
-	ancillary_file = np.array(glob(phot_path+'/*ancillary*.parquet'))[0]
+	if args.target is None: 
+		target = field 
+	else:
+		target = args.target
+
 
 	lc_path = Path(f'/data/tierras/lightcurves/{date}/{field}/{ffname}')
-	make_lc_path(lc_path)	
+	if not os.path.exists(lc_path):
+		make_lc_path(lc_path)	
 
-	# read in the sources from this night 
-	sources = pd.read_csv(phot_path+f'/{date}_{field}_sources.csv')
+	if args.target is None: 
+		target = field 
+	else:
+		target = args.target
 
-	weights_save = np.zeros((len(phot_files), len(sources), len(sources)))
+	date_path = f'/data/tierras/photometry/{date}/{field}/{ffname}'
+	phot_files = glob(date_path+'/**.parquet')
+	n_ims = len(pq.read_table(phot_files[0]))
+	n_dfs = len(phot_files)
 
-	# get the index of the actual Tierras target in this field for future reference
-	tierras_target_id = identify_target_gaia_id(field, sources, x_pix=2048, y_pix=512)
-	tierras_target_ind = np.where(sources['source_id'] == tierras_target_id)[0][0]
+	source_df = pd.read_csv(date_path+f'/{date}_{field}_sources.csv')
+	source_ids = np.array(list(source_df['source_id']))
+	n_sources = len(source_ids)
 
-	# read in all the photometry dfs
-	print(f'Reading in photometry from {len(phot_files)} files.')
-	dfs = [pq.read_table(i) for i in phot_files]
-	ancillary_df = pq.read_table(ancillary_file)
-	n_ims = len(dfs[0])
-	n_sources = len(sources)
-
-	flux = np.zeros((len(dfs), n_ims, n_sources))
+	times = np.zeros(n_ims, dtype='float64')
+	airmasses = np.zeros(n_ims, dtype='float16')
+	exposure_times = np.zeros(n_ims, dtype='float16')
+	filenames = np.zeros(n_ims, dtype='str')
+	ha = np.zeros(n_ims, dtype='float16')
+	humidity = np.zeros(n_ims, dtype='float16')
+	fwhm_x = np.zeros(n_ims, dtype='float16')
+	fwhm_y = np.zeros(n_ims, dtype='float16')
+	flux = np.zeros((n_dfs, n_ims, n_sources), dtype='float32')
 	flux_err = np.zeros_like(flux)
-	non_linear_flags = np.zeros_like(flux)
-	saturated_flags = np.zeros_like(flux)
-	flux_corr_save = np.zeros_like(flux)
-	flux_corr_err_save = np.zeros_like(flux)
-	alc_save = np.zeros_like(flux)
-	alc_err_save = np.zeros_like(flux)
-	sky = np.zeros_like(flux)
-	x = np.zeros_like(flux)
-	y = np.zeros_like(flux)
-	fwhm_x = np.zeros_like(flux)
-	fwhm_y = np.zeros_like(flux)
+	non_linear_flags = np.zeros_like(flux, dtype='int')
+	saturated_flags = np.zeros_like(flux, dtype='int')
+	x = np.zeros((n_ims, n_sources), dtype='float32')
+	y = np.zeros_like(x)
+	sky = np.zeros_like(x)
 
-	#breakpoint()
-	for i in range(len(dfs)):
-		for j in range(n_sources):
-			flux[i,:,j] = dfs[i][f'S{j} Source-Sky']
-			flux_err[i,:,j] = dfs[i][f'S{j} Source-Sky Err']
-			non_linear_flags[i,:,j] = dfs[i][f'S{j} NL Flag']
-			sky[i,:,j] = dfs[i][f'S{j} Sky']
-			x[i,:,j] = dfs[i][f'S{j} X']
-			y[i,:,j] = dfs[i][f'S{j} Y']
-			#fwhm_x[i,:,j] = dfs[i][f'S{j} X FWHM Arcsec']
-			#fwhm_y[i,:,j] = dfs[i][f'S{j} Y FWHM Arcsec']
-	times = np.array(ancillary_df['BJD TDB'])
-	airmasses = np.array(ancillary_df['Airmass'])
-	exposure_times = np.array(ancillary_df['Exposure Time'])
-	filenames = np.array(ancillary_df['Filename'])
-	ha = np.array(ancillary_df['HA'])
-	humidity = np.array(ancillary_df['Dome Humid'])
-	fwhm_x = np.array(ancillary_df['FWHM X'])
-	fwhm_y = np.array(ancillary_df['FWHM Y'])
+	times_list = []
+	start = 0
 
-	# figure out if there are existing lc files 
-	existing_lc_files = glob(str(lc_path)+'/*_lc.csv')
+	t1 = time.time()
 
-	if (len(existing_lc_files) != len(phot_files)) or overwrite:
+	ancillary_cols = ['Filename', 'BJD TDB', 'Airmass', 'Exposure Time', 'HA', 'Dome Humid', 'FWHM X', 'FWHM Y']
+
+	print(f'Reading in photometry from {date_path}.')
+
+	ancillary_file = glob(date_path+'/**ancillary**.parquet')
+	phot_files = glob(date_path+'/**phot**.parquet')
+	if len(phot_files) == 0:
+		raise RuntimeError(f'No photometry files for {field} on {date}! Run ap_phot.py first.')
+	phot_files = sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0])) # sort on aperture size so everything is in order
+
+	n_dfs = len(phot_files)
+
+	ancillary_tab = pq.read_table(ancillary_file, columns=ancillary_cols)
+
+	source_inds = np.arange(len(source_ids))
+	for j in range(n_dfs):
+		# only read in the necessary columns from the data files to save a lot of time in very crowded fields
+		use_cols = []
+		for k in range(len(source_inds)):
+			use_cols.append(f'S{source_inds[k]} Source-Sky')
+			use_cols.append(f'S{source_inds[k]} Source-Sky Err')
+			use_cols.append(f'S{source_inds[k]} NL Flag')
+			use_cols.append(f'S{source_inds[k]} Sat Flag')
+			use_cols.append(f'S{source_inds[k]} Sky')
+			use_cols.append(f'S{source_inds[k]} X')
+			use_cols.append(f'S{source_inds[k]} Y')
+
+		data_tab = pq.read_table(phot_files[j], columns=use_cols, memory_map=True)
+		stop = start+len(data_tab)
+
+		times[start:stop] = np.array(ancillary_tab['BJD TDB'])
+		if j == 0:
+			times_list.append(times[start:stop])
+		airmasses[start:stop] = np.array(ancillary_tab['Airmass'])
+		exposure_times[start:stop] = np.array(ancillary_tab['Exposure Time'])
+		filenames[start:stop] = np.array(ancillary_tab['Filename'])
+		ha[start:stop] = np.array(ancillary_tab['HA'])
+		humidity[start:stop] = np.array(ancillary_tab['Dome Humid'])
+		fwhm_x[start:stop] = np.array(ancillary_tab['FWHM X'])
+		fwhm_y[start:stop] = np.array(ancillary_tab['FWHM Y'])
+		
+		for k in range(n_sources):
+			flux[j,start:stop,k] = np.array(data_tab[f'S{source_inds[k]} Source-Sky'])
+			flux_err[j,start:stop,k] = np.array(data_tab[f'S{source_inds[k]} Source-Sky Err'])
+			non_linear_flags[j,start:stop,k] = np.array(data_tab[f'S{source_inds[k]} NL Flag'])
+			saturated_flags[j,start:stop,k] = np.array(data_tab[f'S{source_inds[k]} Sat Flag'])
+			if j == 0:
+				x[start:stop,k] = np.array(data_tab[f'S{source_inds[k]} X'])
+				y[start:stop,k] = np.array(data_tab[f'S{source_inds[k]} Y'])
+				sky[start:stop,k] = np.array(data_tab[f'S{source_inds[k]} Sky'])
+
+	start = stop
+	print(f'Read-in: {time.time()-t1}')
+
+	x_offset = int(np.floor(times[0]))
+	times -= x_offset
+
+	x_deviations = np.median(x - np.nanmedian(x, axis=0), axis=1)
+	y_deviations = np.median(y - np.nanmedian(y, axis=0), axis=1)
+	median_sky = np.median(sky, axis=1)/exposure_times
+	
+	# optionally restrict to SAME 
+	if same: 
+		same_mask = np.zeros(len(fwhm_x), dtype='int')
+
+		fwhm_inds = np.where(fwhm_x > 4)[0]
+		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
+		airmass_inds = np.where(airmasses > 2.0)[0]
+		sky_inds = np.where(median_sky > 5)[0]
+		humidity_inds = np.where(humidity > 50)[0]
+		same_mask[fwhm_inds] = 1
+		same_mask[pos_inds] = 1
+		same_mask[airmass_inds] = 1
+		same_mask[sky_inds] = 1
+		same_mask[humidity_inds] = 1
+
+		print(f'Restrictions cut to {len(np.where(same_mask == 0)[0])} SAME exposures out of {len(x_deviations)} total exposures.')
+		mask = same_mask==1
 
 
-		# identify the target and a set of suitable reference stars in the list of sources
-		max_refs = 100 
-		if len(sources) > max_refs:
-			ref_gaia_ids = sources['source_id'][0:max_refs]
-			ref_inds = np.arange(max_refs)
+		# times[mask] = np.nan
+		airmasses[mask] = np.nan
+		exposure_times[mask] = np.nan
+		filenames[mask] = np.nan
+		ha[mask] = np.nan
+		humidity[mask] = np.nan
+		fwhm_x[mask] = np.nan 
+		fwhm_y[mask] = np.nan 
+		flux[:,mask,:] = np.nan 
+		flux_err[:,mask,:] = np.nan 
+		x[mask,:] = np.nan 
+		y[mask,:] = np.nan 
+		sky[mask,:] = np.nan
+
+	# determine maximum time range covered by all of the nights, we'll need this for plotting 
+	time_deltas = [i[-1]-i[0] for i in times_list]
+	x_range = np.nanmax(time_deltas)
+
+	try:
+		tierras_target_id = identify_target_gaia_id(field, source_df, x_pix=targ_x_pix, y_pix=targ_y_pix)
+	except:
+		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
+	
+	ppb = 1
+	n_bins = int(np.ceil(n_ims/ppb))
+	bin_inds = []
+	for i in range(n_bins):
+		if i != n_bins - 1:
+			bin_inds.append(np.arange(i*ppb, (i+1)*ppb))
 		else:
-			ref_gaia_ids = sources['source_id']
-			ref_inds = np.arange(sources)
+			bin_inds.append(np.arange(i*ppb, n_ims))
+	bin_inds = np.array(bin_inds)
+
+	binned_times = np.zeros(len(bin_inds))
+	binned_airmass = np.zeros_like(binned_times)
+	binned_exposure_time = np.zeros_like(binned_times)
+	binned_flux = np.zeros((n_dfs, len(bin_inds), n_sources))
+	binned_flux_err = np.zeros_like(binned_flux)
+	binned_nl_flags = np.zeros_like(binned_flux, dtype='int')
+	for i in range(n_bins):
+		binned_times[i] = np.mean(times[bin_inds[i]])
+		binned_airmass[i] = np.mean(airmasses[bin_inds[i]])
+		binned_exposure_time[i] = np.nansum(exposure_times[bin_inds[i]])
+		for j in range(n_dfs):
+			binned_flux[j,i,:] = np.nanmean(flux[j,bin_inds[i]], axis=0)
+			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,bin_inds[i]],axis=0)/np.sqrt(len(bin_inds[i]))
+			binned_nl_flags[j,i,np.sum(non_linear_flags[j,bin_inds[i]], axis=0)>1] = 1
+
+	# start_ind = np.where(common_source_ids == 4147120983934854400)[0][0]
+	
+	avg_mearth_times = np.zeros(n_sources)
+
+	# choose a set of references and generate weights
+	max_refs = 1000
+	if len(source_ids) > max_refs:
+		ref_gaia_ids = source_ids[0:max_refs]
+		ref_inds = np.arange(max_refs)
+	else:
+		ref_gaia_ids = source_ids
+		ref_inds = np.arange(len(source_ids))
+
+	print(f'Weighting {len(ref_inds)} reference stars...')
+	weights_arr = np.zeros((len(ref_inds), n_dfs))
+	for i in range(n_dfs):
+		print(f'{i+1} of {n_dfs}')
+		flux_arr = binned_flux[i][:,ref_inds]
+		flux_err_arr = binned_flux_err[i][:,ref_inds]
+		nl_flag_arr = binned_nl_flags[i][:,ref_inds]
+		weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+		weights_arr[:, i] = weights
+
+	# save a csv with the weights 
+	weights_dict = {'Ref ID':source_ids[ref_inds]}
+	for i in range(n_dfs):
+		ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.')[0]
+		weights_dict[ap_size] = weights_arr[:,i]
+	weights_df = pd.DataFrame(weights_dict)
+	weights_df.to_csv(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_weights.csv', index=0)
+	set_tierras_permissions(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_weights.csv')
+	
+	ppb = 5 # set up bins for evaluating stddevs of lcs
+	n_bins = int(np.ceil(n_ims/ppb))
+	bin_inds = []
+	for i in range(n_bins):
+		if i != n_bins - 1:
+			bin_inds.append(np.arange(i*ppb, (i+1)*ppb))
+		else:
+			bin_inds.append(np.arange(i*ppb, n_ims))
+	bin_inds = np.array(bin_inds)
+
+	for tt in range(len(source_ids)):
+		tloop = time.time()
 		
-		if tierras_target_ind in ref_inds:
-			ref_inds = np.delete(ref_inds, np.where(ref_inds == tierras_target_ind)[0][0])
-
-		# loop over the photometry dfs, do ALC correction, and choose the optimal photometry file
-		med_stddevs = np.zeros(len(phot_files))
-		corr_dict_save = None 
-		best_med_stddev = 999999.
-		# loop over all the photometry files and determine the one with the best scatter on 5-minute timescales
+		if source_ids[tt] == tierras_target_id:
+			target = field
+			target_gaia_id = tierras_target_id 
+			plot = True
+		else:
+			target = 'Gaia DR3 '+str(source_ids[tt])
+			target_gaia_id = identify_target_gaia_id(target)
+			plot = False 
 		
-		for j in range(len(dfs)):
-			# targ_and_ref_inds = np.insert(ref_inds, 0, target_ind)
+		print(f'Doing {target}, source {tt+1} of {len(source_ids)}.')
+		# ref_gaia_ids = ref_selection(target_gaia_id, source_dfs[0], common_source_ids, max_refs=100)
+		# inds = np.where(target_gaia_id == common_source_ids)[0]
+		# for i in range(len(ref_gaia_ids)):
+		# 	inds = np.append(inds, np.where(ref_gaia_ids[i] == common_source_ids)[0])
 
-			flux_arr = flux[j][:,ref_inds]
-			flux_err_arr = flux_err[j][:,ref_inds]
-			non_linear_flags_arr = non_linear_flags[j][:,ref_inds]
-			saturated_flags_arr = saturated_flags[j][:,ref_inds]
-			weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, non_linear_flags_arr, airmasses, exposure_times)
-			# flux_corr_save[j][:,i] = corr_flux
-			# flux_corr_err_save[j][:,i]  = corr_flux_err
-			# alc_save[j][:,i] = alc
-			# alc_err_save[j][:,i] = alc_err
-			# weights_save[j,i,targ_and_ref_inds] = weights
-
-			target_flux = copy.deepcopy(flux[j][:,tierras_target_ind])
-			target_flux_err = copy.deepcopy(flux_err[j][:,tierras_target_ind])
-			mask = np.zeros(len(target_flux), dtype='int') 
-			mask[np.where(saturated_flags[j][:,tierras_target_ind])] = True # mask out any saturated exposures for this source
-			if sum(mask) == len(mask):
-				print(f'All exposures saturated for, skipping!')
-				break
+		med_stddevs = np.zeros(n_dfs)
+		best_med_stddev = 9999999.
+		mearth_style_times = np.zeros(n_dfs)
+		best_corr_flux = None
+		for i in range(n_dfs):			
+			# tmearth = time.time()
+			# flux_arr = binned_flux[i][:,inds]
+			# flux_err_arr = binned_flux_err[i][:,inds]
+			# nl_flag_arr = binned_nl_flags[i][:,inds]
+			# weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time)
 			
-			# use the weights calculated in mearth_style to create the ALC 
-			alc = np.matmul(flux_arr, weights)
-			alc_err = np.sqrt(np.matmul(flux_err_arr**2, weights**2))
+			# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
+			if target_gaia_id in ref_gaia_ids:
+				if i == 0:
+					weight_ind = np.where(ref_gaia_ids == target_gaia_id)[0][0]
+				weights = copy.deepcopy(weights_arr[:,i])
+				weights[weight_ind] = 0
+				weights /= np.nansum(weights)
+			else:
+				weights = copy.deepcopy(weights_arr[:,i])
 
+			# mearth_style_times[i] = time.time()-tmearth
+				
+			mask = np.zeros(len(flux[i][:,tt]), dtype='int') 
+			mask[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
+			if sum(mask) == len(mask):
+				print(f'All exposures saturated for {target_gaia_id}, skipping!')
+				break
+
+			# use the weights calculated in mearth_style to create the ALC 
+			alc = np.matmul(flux[i][:,ref_inds], weights)
+			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds]**2, weights**2))
+
+			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
+			target_flux = copy.deepcopy(flux[i][:,tt])
+			target_flux_err = copy.deepcopy(flux_err[i][:,tt])
 			target_flux[mask] = np.nan
 			target_flux_err[mask] = np.nan
 			corr_flux = target_flux / alc
@@ -990,104 +955,63 @@ def main(raw_args=None):
 			norm = np.nanmedian(corr_flux_sc)
 			corr_flux_sc /= norm 
 
-			# evaluate the stddev of the corrected target flux on 5-minute timescales
-			
-			#Trim any NaNs
-			use_inds = ~np.isnan(corr_flux)
-			times_sc = times[use_inds]
-			corr_flux_sc = corr_flux[use_inds]
-			corr_flux_err_sc = corr_flux_err[use_inds] 
-			
-			#Sigmaclip
-			v,l,h = sigmaclip(corr_flux_sc)
-			use_inds = np.where((corr_flux_sc>l)&(corr_flux_sc<h))[0]
-			times_sc = times_sc[use_inds]
-			corr_flux_sc = corr_flux_sc[use_inds]
-			corr_flux_err_sc = corr_flux_err_sc[use_inds]
-			
-			norm = np.mean(corr_flux_sc)
-			corr_flux_sc /= norm 
-			corr_flux_err_sc /= norm
-			
 			# Evaluate the median standard deviation over 5-minute intervals 
-			bin_inds = tierras_binner_inds(times_sc, bin_mins=5)
 			stddevs = np.zeros(len(bin_inds))
 			for k in range(len(bin_inds)):
 				stddevs[k] = np.nanstd(corr_flux_sc[bin_inds[k]])
-			med_stddevs[j] = np.nanmedian(stddevs)	
+			
+			med_stddevs[i] = np.nanmedian(stddevs)	
 
-			if med_stddevs[j] < best_med_stddev: 
-				print(f'New best light curve found! {phot_files[j].split("/")[-1]}: {med_stddevs[j]*1e6:.1f} in 5-minute bins')
-				best_med_stddev = med_stddevs[j]
-				best_phot_file = j 
-				corr_flux_save = corr_flux 
-				corr_flux_err_save = corr_flux_err 
-				alc_save = alc 
-				alc_err_save = alc_err 
+			# if this light curve is better than the previous ones, store it for later
+			if med_stddevs[i] < best_med_stddev: 
+				best_med_stddev = med_stddevs[i]
+				best_phot_file = i 
+				best_corr_flux = corr_flux
+				best_corr_flux_err = corr_flux_err
+				best_alc = alc
+				best_alc_err = alc_err
 
-			#plt.plot(times, corr_flux_save)
-			#breakpoint()
-		
-		# breakpoint() 
-		# write out csv's with the light curve information 
-		for i in range(len(dfs)):
-			output_path = lc_path/f'{phot_files[i].split("/")[-1].split(".parquet")[0]+"_lc.csv"}'
-			output_list = []
-			output_header = []
-			output_list.append([f'{val}' for val in filenames])
-			output_header.append('Filename')
+		if best_corr_flux is not None:
+			
+			v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
+			use_inds = np.where((best_corr_flux >= l) & (best_corr_flux <= h))
+			
+			bins, std, theo = allen_deviation(times[use_inds], best_corr_flux[use_inds], best_corr_flux_err[use_inds])
 
-			output_list.append([f'{val:.7f}' for val in times])
-			output_header.append('BJD TDB')
-			# for j in range(n_sources):
-			source_name = f'S{tierras_target_ind}'
-			output_list.append([f'{val:.7f}' for val in corr_flux_save])
-			output_header.append(source_name + ' Corrected Flux')
-			output_list.append([f'{val:.7f}' for val in corr_flux_err_save])
-			output_header.append(source_name + ' Corrected Flux Error')	
-			output_list.append([f'{val:.7f}' for val in alc_save])
-			output_header.append(source_name + ' ALC')
-			output_list.append([f'{val:.7f}' for val in alc_err_save])
-			output_header.append(source_name + ' ALC Error')
+			med_std_over_theo = np.nanmedian(std/theo)
+			if med_std_over_theo > 10:
+				print('Possible variable!')
+				plot = False
 
-			output_df = pd.DataFrame(np.transpose(output_list),columns=output_header)
+			# write out the best light curve 
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err}
+			output_path = Path(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/')
 			if not os.path.exists(output_path.parent.parent):
 				os.mkdir(output_path.parent.parent)
 				set_tierras_permissions(output_path.parent.parent)
 			if not os.path.exists(output_path.parent):
 				os.mkdir(output_path.parent)
 				set_tierras_permissions(output_path.parent)
-			output_df.to_csv(output_path,index=False)
-			set_tierras_permissions(output_path)
+			if not os.path.exists(output_path):
+				os.mkdir(output_path)
+				set_tierras_permissions(output_path)
 
-		# update the sources .csv file to list the best photometry file found for each source
-		# sources['Best Photometry File'] = [i.split('/')[-1] for i in phot_files[best_phot_file]] 
-		# sources.to_csv(phot_path+f'/{date}_{field}_sources.csv')
+			best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
 
-		# write out the weights
-		# pickle.dump(weights_save, open(lc_path/'alc_weights.p','wb'))
+			if os.path.exists(output_path/f'{date}_{target}_lc.csv'):
+				os.remove(output_path/f'{date}_{target}_lc.csv')
+			
+			filename = open(output_path/f'{date}_{target}_lc.csv', 'a')
+			filename.write(f'# this light curve was made using {best_phot_style}\n' )
+			output_df = pd.DataFrame(output_dict)
+			output_df.to_csv(filename, index=0, na_rep=np.nan)
+			filename.close()
+			set_tierras_permissions(output_path/f'{date}_{target}_lc.csv')
 
-	# do some plots of the target 
-	j = np.where([sources['Best Photometry File'][tierras_target_ind] in i for i in phot_files])[0][0] 
-	lc_df = pd.read_csv(lc_path/f'{phot_files[j].split("/")[-1].split(".csv")[0]+"_lc.csv"}')
-	i = tierras_target_ind
-	corr_flux = np.array(lc_df[f'S{i} Corrected Flux'])
-	corr_flux_err = np.array(lc_df[f'S{i} Corrected Flux Error'])
-	alc = np.array(lc_df[f'S{i} ALC'])
-	alc_err = np.array(lc_df[f'S{i} ALC Error'])
+			gc.collect() # do garbage collection to prevent memory leaks 
+			print(f'tloop: {time.time()-tloop:.1f}')
 
-	plot_dict = {'Target':field, 'Date':date, 'ffname':ffname, 'BJD':times, 'Flux':flux[j][:,i], 'Flux Error':flux_err[j][:,i], 'ALC':alc, 'ALC Error':alc_err, 'Corrected Flux':corr_flux, 'Corrected Flux Error':corr_flux_err, 'Airmass':airmasses, 'Hour Angle':ha, 'Sky':sky[j][:,i], 'X':x[j][:,i], 'Y':y[j][:,i], 'FWHM X':fwhm_x, 'FWHM Y':fwhm_y, 'Dome Humidity':humidity, 'Exposure Time':exposure_times}
-
-	plot_target_summary(plot_dict)
-	plot_target_lightcurve(plot_dict)
-	breakpoint()
-	plot_ref_lightcurves(corr_dict_save, target_and_refs)
-	plot_raw_fluxes(corr_dict_save, target_and_refs)
-
-	# write out the lc file 
-	# write_lc_file(corr_dict_save, sources)
-
-	breakpoint()
+		# breakpoint()
 	if email: 
 		# Send summary plots 
 		subject = f'[Tierras]_Data_Analysis_Report:{date}_{field}'

@@ -153,6 +153,10 @@ if __name__ == '__main__':
     target = 'Gaia DR3 4147120983934854400'
     pers = np.arange(0.6, 1.5, 1/86400)
     sc = True
+
+    target = 'Gaia DR3 4146824532452265088'
+    pers = None
+    sc = True
     
     df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{target}_global_lc.csv', comment='#')
     x = np.array(df['BJD TDB'])

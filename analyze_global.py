@@ -75,7 +75,6 @@ def main(raw_args=None):
 	ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
 	ap.add_argument("-target", required=False, default=None, help="Specifier for the target in the field to be analyzed. Can be a Gaia DR3 source id (e.g.: 'Gaia DR3 3758629475341196672'), a 2MASS ID (e.g.: '2MASS J10582800-1046304'), or a string of coordinates enclosed by parentheses (e.g. (10:58:28.0 -10:46:58.3) or (164.616667 -10.775138)'. If no argument is passed, the program defaults to using the target field name as the target.")
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
-	ap.add_argument("-overwrite", required=False, default=False, help="Whether or not to overwrite existing lc files.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
 	ap.add_argument("-target_x_pix", required=False, default=None, help="x pixel position of the Tierras target in the field", type=float)
@@ -88,7 +87,6 @@ def main(raw_args=None):
 	#Access observation info
 	field = args.field
 	ffname = args.ffname
-	overwrite = t_or_f(args.overwrite)
 	email = t_or_f(args.email)
 	plot = t_or_f(args.plot)
 	targ_x_pix = args.target_x_pix
@@ -99,8 +97,6 @@ def main(raw_args=None):
 		target = field 
 	else:
 		target = args.target
-	
-
 
 	# identify dates on which this field was observed 
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	

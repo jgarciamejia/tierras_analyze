@@ -125,7 +125,6 @@ def main(raw_args=None):
 					circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
 					ax4.add_patch(circ1)
 
-
 	ap = argparse.ArgumentParser()
 	ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of flat directory")
