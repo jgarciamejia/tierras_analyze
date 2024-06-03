@@ -432,8 +432,6 @@ def main(raw_args=None):
 	plt.savefig(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_precision.png',dpi=300)
 	set_tierras_permissions(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_precision.png')
 	plt.close()
-	breakpoint()
-
 
 if __name__ == '__main__':
 	main()

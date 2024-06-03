@@ -147,7 +147,6 @@ def main(raw_args=None):
 				ax1.lines[-1].remove()
 				ax3.lines[-1].remove()
 				ax5.lines[-1].remove()
-				# highlight.remove()
 				highlight = None
 		else:
 			label = ''
@@ -172,11 +171,10 @@ def main(raw_args=None):
 			dists = ((source_xs - x_click)**2+(source_ys - y_click)**2)**0.5
 			point = np.argmin(dists)
 		elif label == 'ax5':
-			print('hit ax5')
 			x_click = event.xdata
 			y_click = event.ydata
 			dists = ((bp_rp - x_click)**2+(G_mags - y_click)**2)**0.5
-			point = np.argmin(dists)
+			point = np.nanargmin(dists)
 		else:
 			return
 
@@ -186,6 +184,7 @@ def main(raw_args=None):
 
 		highlight_5 = ax5.plot(bp_rp[point], G_mags[point], 'mo')
 
+		# clear out the previous lc and plot the new one
 		ax2.cla()
 		ax2.errorbar(times_save[point], flux_save[point], flux_err_save[point], marker='.', ls='', ecolor='#b0b0b0', color='#b0b0b0')
 		ax2.errorbar(bin_times_save[point], bin_flux_save[point], bin_flux_err_save[point], marker='o', color='k', ecolor='k', mfc='none', zorder=3, mew=1.5, ms=7, ls='')
@@ -196,6 +195,7 @@ def main(raw_args=None):
 		ax2.set_ylabel('Normalized Flux', fontsize=14)
 		ax2.set_title(source_ids[point], fontsize=14)
 
+		# update the field plot 
 		ax4.set_xlim(source_xs[point]-50, source_xs[point]+50)
 		ax4.set_ylim(source_ys[point]-50, source_ys[point]+50)
 

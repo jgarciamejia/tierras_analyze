@@ -16,114 +16,175 @@ from matplotlib import colors
 
 def main(raw_args=None):
 
-	def on_plot_hover(event):
-		# Iterating over each data member plotted
-		for curve in ax1.get_lines():
-			# Searching which data member corresponds to current mouse position
-			if curve.contains(event)[0]:
-				if curve.get_gid() != None:
-					ax2.cla()
-					ax1.patches.clear()
-					ax2.patches.clear()
-					ax3.patches.clear()
-					ax4.patches.clear()
-					print("over %d" % curve.get_gid())
+	# def on_plot_hover(event):
+	# 	# Iterating over each data member plotted
+	# 	for curve in ax1.get_lines():
+	# 		# Searching which data member corresponds to current mouse position
+	# 		if curve.contains(event)[0]:
+	# 			if curve.get_gid() != None:
+	# 				ax2.cla()
+	# 				ax1.patches.clear()
+	# 				ax2.patches.clear()
+	# 				ax3.patches.clear()
+	# 				ax4.patches.clear()
+	# 				print("over %d" % curve.get_gid())
 
-					# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
-					# times = np.array(df['BJD TDB'])
-					# flux = np.array(df['Flux'])
+	# 				# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
+	# 				# times = np.array(df['BJD TDB'])
+	# 				# flux = np.array(df['Flux'])
 					
-					# nan_inds = ~np.isnan(flux)
-					# times = times[nan_inds]
-					# flux = flux[nan_inds]
+	# 				# nan_inds = ~np.isnan(flux)
+	# 				# times = times[nan_inds]
+	# 				# flux = flux[nan_inds]
 
-					# v, l, h = sigmaclip(flux)
-					# inds = np.where((flux > l) & (flux < h))
-					source_ind = np.where(source_ids == curve.get_gid())[0][0]
+	# 				# v, l, h = sigmaclip(flux)
+	# 				# inds = np.where((flux > l) & (flux < h))
+	# 				source_ind = np.where(source_ids == curve.get_gid())[0][0]
 					
-					ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
-					ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
-					ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
-					ax2.grid()
-					ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+	# 				ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
+	# 				ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+	# 				ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
+	# 				ax2.grid()
+	# 				ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
 
-					ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
-					ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)
+	# 				ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
+	# 				ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)
 
-					circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
-					ax4.add_patch(circ1)
+	# 				circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
+	# 				ax4.add_patch(circ1)
 		
-		# Iterating over each data member plotted
-		for curve in ax3.get_lines():
-			# Searching which data member corresponds to current mouse position
-			if curve.contains(event)[0]:
-				if curve.get_gid() != None:
-					ax2.cla()
-					ax1.patches.clear()
-					ax2.patches.clear()
-					ax3.patches.clear()
-					ax4.patches.clear()
-					print("over %d" % curve.get_gid())
+	# 	# Iterating over each data member plotted
+	# 	for curve in ax3.get_lines():
+	# 		# Searching which data member corresponds to current mouse position
+	# 		if curve.contains(event)[0]:
+	# 			if curve.get_gid() != None:
+	# 				ax2.cla()
+	# 				ax1.patches.clear()
+	# 				ax2.patches.clear()
+	# 				ax3.patches.clear()
+	# 				ax4.patches.clear()
+	# 				print("over %d" % curve.get_gid())
 
-					# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
-					# times = np.array(df['BJD TDB'])
-					# flux = np.array(df['Flux'])
+	# 				# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
+	# 				# times = np.array(df['BJD TDB'])
+	# 				# flux = np.array(df['Flux'])
 					
-					# nan_inds = ~np.isnan(flux)
-					# times = times[nan_inds]
-					# flux = flux[nan_inds]
+	# 				# nan_inds = ~np.isnan(flux)
+	# 				# times = times[nan_inds]
+	# 				# flux = flux[nan_inds]
 
-					# v, l, h = sigmaclip(flux)
-					# inds = np.where((flux > l) & (flux < h))
-					source_ind = np.where(source_ids == curve.get_gid())[0][0]
+	# 				# v, l, h = sigmaclip(flux)
+	# 				# inds = np.where((flux > l) & (flux < h))
+	# 				source_ind = np.where(source_ids == curve.get_gid())[0][0]
 					
-					ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
-					ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
-					ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
-					ax2.grid()
-					ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+	# 				ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
+	# 				ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+	# 				ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
+	# 				ax2.grid()
+	# 				ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
 
-					ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
-					ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)	
+	# 				ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
+	# 				ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)	
 
-					circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
-					ax4.add_patch(circ1)
+	# 				circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
+	# 				ax4.add_patch(circ1)
 
-		# Iterating over each data member plotted
-		for curve in ax4.get_lines():
-			# Searching which data member corresponds to current mouse position
-			if curve.contains(event)[0]:
-				if curve.get_gid() != None:
-					ax2.cla()
-					ax1.patches.clear()
-					ax2.patches.clear()
-					ax3.patches.clear()
-					ax4.patches.clear()
-					print("over %d" % curve.get_gid())
+	# 	# Iterating over each data member plotted
+	# 	for curve in ax4.get_lines():
+	# 		# Searching which data member corresponds to current mouse position
+	# 		if curve.contains(event)[0]:
+	# 			if curve.get_gid() != None:
+	# 				ax2.cla()
+	# 				ax1.patches.clear()
+	# 				ax2.patches.clear()
+	# 				ax3.patches.clear()
+	# 				ax4.patches.clear()
+	# 				print("over %d" % curve.get_gid())
 
-					# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
-					# times = np.array(df['BJD TDB'])
-					# flux = np.array(df['Flux'])
+	# 				# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
+	# 				# times = np.array(df['BJD TDB'])
+	# 				# flux = np.array(df['Flux'])
 					
-					# nan_inds = ~np.isnan(flux)
-					# times = times[nan_inds]
-					# flux = flux[nan_inds]
+	# 				# nan_inds = ~np.isnan(flux)
+	# 				# times = times[nan_inds]
+	# 				# flux = flux[nan_inds]
 
-					# v, l, h = sigmaclip(flux)
-					# inds = np.where((flux > l) & (flux < h))
-					source_ind = np.where(source_ids == curve.get_gid())[0][0]
+	# 				# v, l, h = sigmaclip(flux)
+	# 				# inds = np.where((flux > l) & (flux < h))
+	# 				source_ind = np.where(source_ids == curve.get_gid())[0][0]
 					
-					ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
-					ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
-					ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
-					ax2.grid()
-					ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+	# 				ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
+	# 				ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+	# 				ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
+	# 				ax2.grid()
+	# 				ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
 
-					ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
-					ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)	
+	# 				ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
+	# 				ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)	
 
-					circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
-					ax4.add_patch(circ1)
+	# 				circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
+	# 				ax4.add_patch(circ1)
+
+	def on_click(event):
+		global highlight 
+		# print(event.inaxes)
+		ax = event.inaxes
+		if ax is not None:
+			label = axes_mapping.get(ax, 'Unknown axis')
+			if highlight:
+				ax1.lines[-1].remove()
+				ax3.lines[-1].remove()
+				ax4.lines[-1].remove()
+				highlight = None
+		else:
+			label = ''
+
+		if label == 'ax1':
+			x_click = event.xdata
+			y_click = event.ydata
+			dists = ((rp_mags - x_click)**2+(np.log10(night_to_nights) - np.log10(y_click))**2)**0.5
+			point = np.argmin(dists)
+			# print(point)
+			# print(x_click)
+			# print(y_click)
+		elif label == 'ax3':
+			x_click = event.xdata
+			y_click = event.ydata
+			dists = ((x_pos - x_click)**2+(y_pos- y_click)**2)**0.5
+			point = np.argmin(dists)
+		elif label == 'ax4':
+			x_click = event.xdata
+			y_click = event.ydata
+			dists = ((bp_rp - x_click)**2+(G - y_click)**2)**0.5
+			point = np.nanargmin(dists)
+		else:
+			return
+		
+		print(f'Clicked on {source_ids[point]}')
+
+		highlight = ax1.plot(rp_mags[point], night_to_nights[point], 'mo')
+
+		# highlight_3 = ax3.plot(rp_mags[point], binned_sigmas[point]*1e6, 'mo')
+
+		highlight_4 = ax4.plot(bp_rp[point], G[point], 'mo')
+
+		# clear out the previous lc and plot the new one
+		ax2.cla()
+		# ax2.errorbar(times_save[point], flux_save[point], flux_err_save[point], marker='.', ls='', ecolor='#b0b0b0', color='#b0b0b0')
+		# ax2.errorbar(bin_times_save[point], bin_flux_save[point], bin_flux_err_save[point], marker='o', color='k', ecolor='k', mfc='none', zorder=3, mew=1.5, ms=7, ls='')
+		ax2.errorbar(times_arr[point], flux_arr[point], flux_err_arr[point], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+		ax2.errorbar(bx_arr[point], by_arr[point], bye_arr[point], marker='o', color='k', ls='', zorder=3)
+		ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+		ax2.grid(alpha=0.5)
+		ax2.tick_params(labelsize=12)
+		ax2.set_xlabel('Time (BJD$_{TDB}$)', fontsize=14)
+		ax2.set_ylabel('Normalized Flux', fontsize=14)
+		ax2.set_title(source_ids[point], fontsize=14)
+
+		# # update the field plot 
+		ax3.set_xlim(x_pos[point]-50, x_pos[point]+50)
+		ax3.set_ylim(y_pos[point]-50, y_pos[point]+50)
+
 
 	ap = argparse.ArgumentParser()
 	ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
@@ -171,7 +232,6 @@ def main(raw_args=None):
 
 	flattened_files = get_flattened_files(best_date, field, ffname)
 	source_image = fits.open(flattened_files[best_im_ind])[0].data
-	breakpoint()
 
 	# get the global light curves that have been created for this field
 	lc_files = glob.glob(f'/data/tierras/fields/{field}/sources/lightcurves/**.csv')
@@ -232,7 +292,6 @@ def main(raw_args=None):
 	bye_arr = []
 	# plt.figure(figsize=(10,10))
 	for i in range(len(lc_files)):
-	#for i in range(100):
 		try:
 			source = int(lc_files[i].split('Gaia DR3 ')[1].split('_')[0])
 			source_ids.append(source)	
@@ -342,10 +401,14 @@ def main(raw_args=None):
 	ax2 = fig.add_subplot(gs[1,:])
 	ax3 = fig.add_subplot(gs[0,1])
 	ax4 = fig.add_subplot(gs[0,2])
-	
-	fig.canvas.mpl_connect('motion_notify_event', on_plot_hover)  
 
-	# fig.canvas.mpl_connect('pick_event', on_pick)
+	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
+	
+	# ig.canvas.mpl_connect('motion_notify_event', on_plot_hover)
+	global highlight
+	highlight = None
+	fig.canvas.mpl_connect('button_press_event', on_click)
+  
 	for i in range(len(lc_files)):
 	# for i in range(100):
 		if i == 0:

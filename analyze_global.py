@@ -121,8 +121,7 @@ def main(raw_args=None):
 		dates_to_remove = []
 		for i in range(len(bad_dates)):
 			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
-		date_list = np.delete(date_list, dates_to_remove)
-		breakpoint()		
+		date_list = np.delete(date_list, dates_to_remove)		
 
 	# date_list = np.array(date_list)[[0,-1]]
 	# read in the source df's from each night 
