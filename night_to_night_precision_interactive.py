@@ -7,123 +7,17 @@ plt.ion()
 from scipy.stats import sigmaclip
 import pyarrow.parquet as pq 
 from astropy.io import fits 
-from ap_phot import get_flattened_files
+from ap_phot import get_flattened_files, t_or_f
 from astropy.visualization import simple_norm 
 from matplotlib.gridspec import GridSpec
 from matplotlib.widgets import TextBox, Button
 from analyze_global import identify_target_gaia_id
 from matplotlib import colors
+from internight_precision_interactive import gaia_query
+from photutils.aperture import CircularAperture, aperture_photometry 
+from astropy.modeling.functional_models import Gaussian2D
 
 def main(raw_args=None):
-
-	# def on_plot_hover(event):
-	# 	# Iterating over each data member plotted
-	# 	for curve in ax1.get_lines():
-	# 		# Searching which data member corresponds to current mouse position
-	# 		if curve.contains(event)[0]:
-	# 			if curve.get_gid() != None:
-	# 				ax2.cla()
-	# 				ax1.patches.clear()
-	# 				ax2.patches.clear()
-	# 				ax3.patches.clear()
-	# 				ax4.patches.clear()
-	# 				print("over %d" % curve.get_gid())
-
-	# 				# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
-	# 				# times = np.array(df['BJD TDB'])
-	# 				# flux = np.array(df['Flux'])
-					
-	# 				# nan_inds = ~np.isnan(flux)
-	# 				# times = times[nan_inds]
-	# 				# flux = flux[nan_inds]
-
-	# 				# v, l, h = sigmaclip(flux)
-	# 				# inds = np.where((flux > l) & (flux < h))
-	# 				source_ind = np.where(source_ids == curve.get_gid())[0][0]
-					
-	# 				ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
-	# 				ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
-	# 				ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
-	# 				ax2.grid()
-	# 				ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
-
-	# 				ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
-	# 				ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)
-
-	# 				circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
-	# 				ax4.add_patch(circ1)
-		
-	# 	# Iterating over each data member plotted
-	# 	for curve in ax3.get_lines():
-	# 		# Searching which data member corresponds to current mouse position
-	# 		if curve.contains(event)[0]:
-	# 			if curve.get_gid() != None:
-	# 				ax2.cla()
-	# 				ax1.patches.clear()
-	# 				ax2.patches.clear()
-	# 				ax3.patches.clear()
-	# 				ax4.patches.clear()
-	# 				print("over %d" % curve.get_gid())
-
-	# 				# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
-	# 				# times = np.array(df['BJD TDB'])
-	# 				# flux = np.array(df['Flux'])
-					
-	# 				# nan_inds = ~np.isnan(flux)
-	# 				# times = times[nan_inds]
-	# 				# flux = flux[nan_inds]
-
-	# 				# v, l, h = sigmaclip(flux)
-	# 				# inds = np.where((flux > l) & (flux < h))
-	# 				source_ind = np.where(source_ids == curve.get_gid())[0][0]
-					
-	# 				ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
-	# 				ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
-	# 				ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
-	# 				ax2.grid()
-	# 				ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
-
-	# 				ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
-	# 				ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)	
-
-	# 				circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
-	# 				ax4.add_patch(circ1)
-
-	# 	# Iterating over each data member plotted
-	# 	for curve in ax4.get_lines():
-	# 		# Searching which data member corresponds to current mouse position
-	# 		if curve.contains(event)[0]:
-	# 			if curve.get_gid() != None:
-	# 				ax2.cla()
-	# 				ax1.patches.clear()
-	# 				ax2.patches.clear()
-	# 				ax3.patches.clear()
-	# 				ax4.patches.clear()
-	# 				print("over %d" % curve.get_gid())
-
-	# 				# df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/Gaia DR3 {curve.get_gid()}_global_lc.csv', comment='#')
-	# 				# times = np.array(df['BJD TDB'])
-	# 				# flux = np.array(df['Flux'])
-					
-	# 				# nan_inds = ~np.isnan(flux)
-	# 				# times = times[nan_inds]
-	# 				# flux = flux[nan_inds]
-
-	# 				# v, l, h = sigmaclip(flux)
-	# 				# inds = np.where((flux > l) & (flux < h))
-	# 				source_ind = np.where(source_ids == curve.get_gid())[0][0]
-					
-	# 				ax2.set_title(f'Gaia DR3 {source_ids[source_ind]}', fontsize=14)
-	# 				ax2.errorbar(times_arr[source_ind], flux_arr[source_ind], flux_err_arr[source_ind], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
-	# 				ax2.errorbar(bx_arr[source_ind], by_arr[source_ind], bye_arr[source_ind], marker='o', color='k', ls='', zorder=3)
-	# 				ax2.grid()
-	# 				ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
-
-	# 				ax3.set_xlim(x_pos[source_ind]-40, x_pos[source_ind]+40)
-	# 				ax3.set_ylim(y_pos[source_ind]-40, y_pos[source_ind]+40)	
-
-	# 				circ1 = plt.Circle((bp_rp[source_ind], G[source_ind]), 0.2, color='k', fill=False, linewidth=2, zorder=3)
-	# 				ax4.add_patch(circ1)
 
 	def on_click(event):
 		global highlight 
@@ -131,13 +25,8 @@ def main(raw_args=None):
 		ax = event.inaxes
 		if ax is not None:
 			label = axes_mapping.get(ax, 'Unknown axis')
-			if highlight:
-				ax1.lines[-1].remove()
-				ax3.lines[-1].remove()
-				ax4.lines[-1].remove()
-				highlight = None
 		else:
-			label = ''
+			return
 
 		if label == 'ax1':
 			x_click = event.xdata
@@ -147,6 +36,8 @@ def main(raw_args=None):
 			# print(point)
 			# print(x_click)
 			# print(y_click)
+		elif label == 'ax2':
+			return
 		elif label == 'ax3':
 			x_click = event.xdata
 			y_click = event.ydata
@@ -161,12 +52,17 @@ def main(raw_args=None):
 			return
 		
 		print(f'Clicked on {source_ids[point]}')
+		if highlight:
+			ax1.lines[-1].remove()
+			ax3.lines[-1].remove()
+			ax4.lines[-1].remove()
+			highlight = None
 
-		highlight = ax1.plot(rp_mags[point], night_to_nights[point], 'mo')
+		highlight = ax1.plot(rp_mags[point], night_to_nights[point], marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
 
 		# highlight_3 = ax3.plot(rp_mags[point], binned_sigmas[point]*1e6, 'mo')
 
-		highlight_4 = ax4.plot(bp_rp[point], G[point], 'mo')
+		highlight_4 = ax4.plot(bp_rp[point], G[point], marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
 
 		# clear out the previous lc and plot the new one
 		ax2.cla()
@@ -185,13 +81,20 @@ def main(raw_args=None):
 		ax3.set_xlim(x_pos[point]-50, x_pos[point]+50)
 		ax3.set_ylim(y_pos[point]-50, y_pos[point]+50)
 
+	# set some constants
+	PLATE_SCALE = 0.432 # " pix^-1
+	contamination_limit = 0.1 
+	contaminant_grid_size = 50
 
 	ap = argparse.ArgumentParser()
 	ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of flat directory")
+	ap.add_argument("-cut_contaminated", required=False, default=True, help="whether or not to perform contamination analysis")
 	args = ap.parse_args()
 	field = args.field 
 	ffname = args.ffname
+	cut_contaminated = t_or_f(args.cut_contaminated)
+
 
 	# get dates on which field was observed so we can plot an image of the field
 	date_list = glob.glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
@@ -202,6 +105,7 @@ def main(raw_args=None):
 	# read in weights csv
 	weights_df = pd.read_csv(f'/data/tierras/fields/{field}/sources/weights.csv')
 	ref_ids = np.array(weights_df['Ref ID'])
+	weights_df = np.array(weights_df)
 
 	# read in the ancillary data from each night
 	# ancillary_dfs = []
@@ -239,29 +143,26 @@ def main(raw_args=None):
 	times -= times[0] 
 
 	# read in positions of sources in the reference image
-	x_pos = np.zeros(len(lc_files))
-	y_pos = np.zeros_like(x_pos)
-	rp = np.zeros_like(x_pos)
-	bp_rp = np.zeros_like(x_pos)
-	G = np.zeros_like(x_pos)
-	for i in range(len(lc_files)):
-		try:
-			source = int(lc_files[i].split('Gaia DR3 ')[1].split('_')[0])
-		except:
-			source = identify_target_gaia_id(str(source), source_df, x_pix=2048, y_pix=512)
-		ind = np.where(source_df['source_id'] == source)[0][0]
-		x_pos[i] = phot_df[f'S{ind} X'][best_im_ind]
-		y_pos[i] = phot_df[f'S{ind} Y'][best_im_ind]	
-		rp[i] = source_df['phot_rp_mean_mag'][ind]
-		bp_rp[i] = source_df['bp_rp'][ind]
-		G[i] = source_df['gq_photogeo'][ind]
-		# except:
-		# 	x_pos[i] = np.nan
-		# 	y_pos[i] = np.nan
+	# x_pos = np.zeros(len(lc_files))
+	# y_pos = np.zeros_like(x_pos)
+	# rp = np.zeros_like(x_pos)
+	# bp_rp = np.zeros_like(x_pos)
+	# G = np.zeros_like(x_pos)
+	# for i in range(len(lc_files)):
+	# 	try:
+	# 		source = int(lc_files[i].split('Gaia DR3 ')[1].split('_')[0])
+	# 	except:
+	# 		source = identify_target_gaia_id(str(source), source_df, x_pix=2048, y_pix=512)
+	# 	ind = np.where(source_df['source_id'] == source)[0][0]
+		
+	# 	# except:
+	# 	# 	x_pos[i] = np.nan
+	# 	# 	y_pos[i] = np.nan
 
 	weighted_ref_rp = []
 	weighted_ref_n2n = []
 	weighted_ref_bp_rp = []
+	weighted_ref_G = []
 
 	# get a list of indices of that correspond to different nights in the light curves
 	time_deltas = np.array([times[i]-times[i-1] for i in range(1,len(times))])
@@ -278,44 +179,105 @@ def main(raw_args=None):
 	times_list.append(times[time_breaks[-1]+1:len(times)])
 	times_inds.append(np.arange(time_breaks[-1]+1,len(times)))
 
-	night_to_nights = np.zeros(len(lc_files))
-	night_to_nights_theory_calculated = np.zeros(len(lc_files))
-	night_to_nights_theory_measured = np.zeros(len(lc_files))
-	rp_mags = np.zeros(len(lc_files))
+	night_to_nights = [] 
+	night_to_nights_theory_calculated = []
+	night_to_nights_theory_measured =[]
+	rp_mags = []
 	source_ids = []
-
+	ap_rad = [] 
 	times_arr = []
 	flux_arr = []
 	flux_err_arr = []
 	bx_arr = []
 	by_arr = []
 	bye_arr = []
+	x_pos = []
+	y_pos = []
+	rp = []
+	bp_rp = []
+	G = []
+
+	if cut_contaminated:	
+		images = get_flattened_files(date_list[0].split('/')[4], field, 'flat0000')
+		# we don't perform photometry on *every* source in the field, so to get an accurate estimate of the contamination for each source, we need to query gaia for all sources (i.e. with no Rp mag limit) so that their fluxes can be modeled
+		all_field_sources = gaia_query(images)
+		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
+		seeing_fwhm = np.nanmedian(fwhm_x) / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
+		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
+		contaminations = []
+
 	# plt.figure(figsize=(10,10))
 	for i in range(len(lc_files)):
 		try:
 			source = int(lc_files[i].split('Gaia DR3 ')[1].split('_')[0])
-			source_ids.append(source)	
 			print(f'Doing Gaia DR3 {source} ({i+1} of {len(lc_files)})')
+			doing_target = False
 		except:
 			source = identify_target_gaia_id(str(source), source_df, x_pix=2048, y_pix=512)
-			source_ids.append(source)
-			# print('Could not identify Gaia DR3 ID, skipping')
-			# breakpoint()
-			# source_ids.append(0)
-			# times_arr.append(np.nan)
-			# flux_arr.append(np.nan)
-			# flux_err_arr.append(np.nan)
-			# bx_arr.append(np.nan)
-			# by_arr.append(np.nan)
-			# bye_arr.append(np.nan)
-			# night_to_nights[i] = np.nan 
-			# night_to_nights_theory_calculated[i] = np.nan
-			# night_to_nights_theory_measured[i] = np.nan
-			# rp_mags[i] = np.nan 
-			# continue
+			doing_target=  True 
 
+		with open(lc_files[i],'r') as f: 
+			comment = f.readline()
+		ap_rad.append(int(comment.split('_')[-1].split('.')[0]))
 
+		source_ind = np.where(source_df['source_id'] == source)[0][0] 
+		source_x = source_df['X pix'][source_ind]
+		source_y = source_df['Y pix'][source_ind]
+		source_rp = source_df['phot_rp_mean_mag'][source_ind]
+		source_G = source_df['gq_photogeo'][source_ind]
+		source_bp_rp = source_df['bp_rp'][source_ind]
+		contamination = 0
+		if cut_contaminated and not doing_target:
+			# estimate contamination 
+			distances = np.array(np.sqrt((source_x-all_field_sources['X pix'])**2+(source_y-all_field_sources['Y pix'])**2))
+			nearby_inds = np.where((distances <= contaminant_grid_size) & (distances != 0))[0]
+			if len(nearby_inds) > 0:
+				
 
+				nearby_rp = np.array(all_field_sources['phot_rp_mean_mag'][nearby_inds])
+				nearby_x = np.array(all_field_sources['X pix'][nearby_inds] - source_x)
+				nearby_y = np.array(all_field_sources['Y pix'][nearby_inds] - source_y)
+
+				# sometimes the rp mag is nan, remove these entries
+				use_inds = np.where(~np.isnan(nearby_rp))[0]
+				nearby_rp = nearby_rp[use_inds]
+				nearby_x = nearby_x[use_inds]
+				nearby_y = nearby_y[use_inds]
+
+				# enforce that a nearby source cannot have the same rp magnitude as the source in question, that's almost certainly a duplicate
+				use_inds = np.where(nearby_rp != source_rp)
+				nearby_rp = nearby_rp[use_inds]
+				nearby_x = nearby_x[use_inds]
+				nearby_y = nearby_y[use_inds]
+
+				# model the source in question as a 2D gaussian
+				source_model = Gaussian2D(x_mean=0, y_mean=0, amplitude=1/(2*np.pi*seeing_sigma**2), x_stddev=seeing_sigma, y_stddev=seeing_sigma)
+				sim_img = source_model(xx, yy)
+
+				# add in gaussian models for the nearby sources
+				for jj in range(len(nearby_rp)):
+					flux = 10**(-(nearby_rp[jj]-source_rp)/2.5)
+					contaminant_model = Gaussian2D(x_mean=nearby_x[jj], y_mean=nearby_y[jj], amplitude=flux/(2*np.pi*seeing_sigma**2), x_stddev=seeing_sigma, y_stddev=seeing_sigma)
+					contaminant = contaminant_model(xx,yy)
+					sim_img += contaminant	
+
+				# estimate contamination by doing aperture photometry on the simulated image
+				# if the measured flux exceeds 1 by a chosen threshold, record the source's index so it can be removed
+				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=ap_rad[i])
+				phot_table = aperture_photometry(sim_img, ap)
+				contamination = phot_table['aperture_sum'][0] - 1
+
+				# if source_id == 4147121464971195776:
+				# 	breakpoint()
+
+				# if the contamination is over the limit, exclude this source from the analysis
+				if contamination > contamination_limit:
+					# plt.figure()
+					# plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=98))
+					# breakpoint()
+					continue
+
+		
 		df = pd.read_csv(lc_files[i], comment='#')
 		flux = np.array(df['Flux'])
 		calculated_flux_err = np.array(df['Flux Error']) # calculated using photon noise from star/sky, read noise, dark current, ALC noise, and scintillation 
@@ -373,26 +335,42 @@ def main(raw_args=None):
 		by_arr.append(np.array(sc_by_arr))
 		bye_arr.append(np.array(sc_bye_arr))
 
-		night_to_nights[i] = np.nanstd(night_medians)
-		night_to_nights_theory_calculated[i] = np.nanmedian(night_errs_on_meds)
-		night_to_nights_theory_measured[i] = np.nanmedian(measured_noise)
-		
+		n2n = np.nanstd(night_medians)
+		night_to_nights.append(n2n)
+		night_to_nights_theory_calculated.append(np.nanmedian(night_errs_on_meds))
+		night_to_nights_theory_measured.append(np.nanmedian(measured_noise))
+
+		source_ids.append(source)
 		source_ind = np.where(source_df['source_id'] == source)[0][0]
-		rp_mags[i] = source_df['phot_rp_mean_mag'][source_ind]
+
+		x_pos.append(phot_df[f'S{source_ind} X'][best_im_ind])
+		y_pos.append(phot_df[f'S{source_ind} Y'][best_im_ind])
+		rp.append(source_df['phot_rp_mean_mag'][source_ind])
+		bp_rp.append(source_df['bp_rp'][source_ind])
+		G.append(source_df['gq_photogeo'][source_ind])
+		rp_mags.append(source_df['phot_rp_mean_mag'][source_ind])
 		if source in ref_ids:
 			ref_ind = np.where(source == ref_ids)[0][0]
 			comment = []
-			with open(lc_files[i], 'r') as file:
-				comment.append(file.readline())
-			ap_size = comment[0].split('using ')[1].split('_')[-1].split('.')[0]
+			# with open(lc_files[i], 'r') as file:
+			# 	comment.append(file.readline())
+			ap_size = ap_rad[i]
+			
+			weight = weights_df[ref_ind, ap_size-4] #TODO: THIS WILL BREAK WITH MORE APS
 
-			weight = weights_df[ap_size][ref_ind]
 			if weight != 0:
-				weighted_ref_rp.append(rp_mags[i])
-				weighted_ref_n2n.append(night_to_nights[i])
-				weighted_ref_bp_rp.append(bp_rp[i])
-		
+				weighted_ref_rp.append(source_rp)
+				weighted_ref_n2n.append(n2n)
+				weighted_ref_bp_rp.append(source_bp_rp)
+				weighted_ref_G.append(source_G)
+
 	source_ids = np.array(source_ids, dtype='int')
+	ap_rad = np.array(ap_rad)
+	night_to_nights = np.array(night_to_nights)
+	night_to_nights_theory_calculated = np.array(night_to_nights_theory_calculated)
+	night_to_nights_theory_measured = np.array(night_to_nights_theory_measured)
+	rp_mags = np.array(rp_mags)
+	print(f'{len(rp_mags)} sources after contamination cuts.')
 
 	# fig, ax = plt.subplots(1,3,figsize=(20,8), gridspec_kw={'width_ratios':[1,2,1]})
 	fig = plt.figure(figsize=(15,10))
@@ -409,7 +387,7 @@ def main(raw_args=None):
 	highlight = None
 	fig.canvas.mpl_connect('button_press_event', on_click)
   
-	for i in range(len(lc_files)):
+	for i in range(len(rp_mags)):
 	# for i in range(100):
 		if i == 0:
 			ax1.plot(rp_mags[i], night_to_nights[i], alpha=0.3, label='Measured', gid=source_ids[i], color='tab:blue', marker='.', ls='')
@@ -437,11 +415,11 @@ def main(raw_args=None):
 	ax2.grid()
 
 	ax3.imshow(source_image, origin='lower', norm=simple_norm(source_image, min_percent=1, max_percent=99))
-	for i in range(len(lc_files)):
+	for i in range(len(x_pos)):
 		ax3.plot(x_pos[i], y_pos[i], 'rx', gid=source_ids[i])
 	
-		ax4.plot(bp_rp[i], G[i], marker='.', color='#b0b0b0', ls='', gid=source_ids[i])
-	
+		ax4.plot(bp_rp[i], G[i], marker='.', color='#b0b0b0', ls='', gid=source_ids[i], zorder=0)
+	ax4.plot(weighted_ref_bp_rp,weighted_ref_G, marker='x', zorder=1, label='Ref star', color='m', ls='', mew=1.5, ms=6, alpha=1)
 	ax4.invert_yaxis()
 	ax4.set_aspect('equal')
 	ax4.set_xlabel('Bp-Rp', fontsize=14)
@@ -466,6 +444,11 @@ def main(raw_args=None):
 	plt.yscale('log')
 	plt.grid(True, which='both', alpha=0.7)
 	plt.tight_layout()
+	
+	# plt.figure()
+	# sc = plt.scatter(rp_mags, night_to_nights/night_to_nights_theory_measured, c=ap_rad)
+	# plt.yscale('log')
+
 
 	if field == 'TIC362144730':
 		output_dict = {'source_id':source_ids, 'night_to_nights':night_to_nights, 'night_to_nights_theory':night_to_nights_theory_measured}

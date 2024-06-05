@@ -348,7 +348,7 @@ def main(raw_args=None):
 	expected = popt[0]*10**(-(rp_mags-10)/2.5)*exp_time/GAIN
 	observed = source_fluxes
 	correction_factor = np.nanmedian(observed/expected)
-	popt[0] /= correction_factor 
+	popt[0] *= correction_factor 
 
 	plt.plot(rp_mags, source_fluxes, marker='.', ls='')
 	plt.plot(rp_mag_grid, popt[0]*10**(-(rp_mag_grid-10)/2.5)*exp_time/GAIN)

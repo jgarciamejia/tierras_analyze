@@ -138,9 +138,9 @@ if __name__ == '__main__':
     # pers = None 
     # sc = True
 
-    # target = 'TIC362144730'
-    # pers =  np.arange(0.7, 0.9, 1/86400)
-    # sc = True
+    target = 'TIC362144730'
+    pers =  np.arange(0.1, 2.5, 1/86400)
+    sc = True
 
     # target = 'Gaia DR3 4147120404136618752'
     # pers = np.arange(2,2.1,1/86400)
@@ -150,13 +150,17 @@ if __name__ == '__main__':
     # pers = None
     # sc = True 
 
-    target = 'Gaia DR3 4147120983934854400'
-    pers = np.arange(0.6, 1.5, 1/86400)
-    sc = True
+    # target = 'Gaia DR3 4147120983934854400'
+    # pers = np.arange(0.6, 1.5, 1/86400)
+    # sc = True
 
-    target = 'Gaia DR3 4146824532452265088'
-    pers = None
-    sc = True
+    # target = 'Gaia DR3 4146824532452265088'
+    # pers = None
+    # sc = True
+
+    # target = 'Gaia DR3 4147114631700963456'
+    # pers = np.arange(0.25, 5, 1/86400)
+    # sc = True
     
     df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{target}_global_lc.csv', comment='#')
     x = np.array(df['BJD TDB'])
