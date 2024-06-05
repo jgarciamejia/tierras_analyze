@@ -163,7 +163,6 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 
 			
 		# update the weights using the measured standard deviations	
-
 		weights_new = 1/stddevs_measured**2
 		weights_new /= np.sum(weights_new[~np.isinf(weights_new)])			
 		weights_new[np.isinf(weights_new)] = 0
@@ -775,20 +774,19 @@ def main(raw_args=None):
 	if same: 
 		same_mask = np.zeros(len(fwhm_x), dtype='int')
 
-		fwhm_inds = np.where(fwhm_x > 4)[0]
+		fwhm_inds = np.where(fwhm_x > 3)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
 		airmass_inds = np.where(airmasses > 2.0)[0]
 		sky_inds = np.where(median_sky > 5)[0]
-		humidity_inds = np.where(humidity > 50)[0]
+		# humidity_inds = np.where(humidity > 50)[0]
 		same_mask[fwhm_inds] = 1
 		same_mask[pos_inds] = 1
 		same_mask[airmass_inds] = 1
 		same_mask[sky_inds] = 1
-		same_mask[humidity_inds] = 1
+		# same_mask[humidity_inds] = 1
 
 		print(f'Restrictions cut to {len(np.where(same_mask == 0)[0])} SAME exposures out of {len(x_deviations)} total exposures.')
 		mask = same_mask==1
-
 
 		# times[mask] = np.nan
 		airmasses[mask] = np.nan

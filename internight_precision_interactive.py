@@ -22,6 +22,7 @@ import astropy.units as u
 from astroquery.gaia import Gaia
 Gaia.MAIN_GAIA_TABLE = 'gaiadr3.gaia_source'
 from astroquery.vizier import Vizier
+import os 
 
 def flux_model(mags, a):
 	return a*10**(-(mags-10)/2.5)
@@ -138,16 +139,10 @@ def gaia_query(file_list, plate_scale=0.432):
 def main(raw_args=None):
 	
 	def on_click(event):
-		global highlight 
-		# print(event.inaxes)
+		global highlight
 		ax = event.inaxes
 		if ax is not None:
 			label = axes_mapping.get(ax, 'Unknown axis')
-			if highlight:
-				ax1.lines[-1].remove()
-				ax3.lines[-1].remove()
-				ax5.lines[-1].remove()
-				highlight = None
 		else:
 			label = ''
 
@@ -160,6 +155,8 @@ def main(raw_args=None):
 			# print(x_click)
 			# print(y_click)
 			print(f'Clicked on {source_ids[point]}')
+		elif label == 'ax2':
+			return 
 		elif label == 'ax3':
 			x_click = event.xdata
 			y_click = event.ydata
@@ -177,12 +174,18 @@ def main(raw_args=None):
 			point = np.nanargmin(dists)
 		else:
 			return
+		
+		if highlight:
+			ax1.lines[-1].remove()
+			ax3.lines[-1].remove()
+			ax5.lines[-1].remove()
+			highlight = None
 
-		highlight = ax1.plot(rp_mags[point], sigmas[point]*1e6, 'mo')
+		highlight = ax1.plot(rp_mags[point], sigmas[point]*1e6, marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
 
-		highlight_3 = ax3.plot(rp_mags[point], binned_sigmas[point]*1e6, 'mo')
+		highlight_3 = ax3.plot(rp_mags[point], binned_sigmas[point]*1e6, marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
 
-		highlight_5 = ax5.plot(bp_rp[point], G_mags[point], 'mo')
+		highlight_5 = ax5.plot(bp_rp[point], G_mags[point], marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
 
 		# clear out the previous lc and plot the new one
 		ax2.cla()
@@ -224,9 +227,16 @@ def main(raw_args=None):
 	# read ancillary data so we can access airmasses and exposure times (for scintillation calculation)
 	ancillary_data = pd.read_parquet(f'/data/tierras/photometry/{date}/{field}/{ffname}/{date}_{field}_ancillary_data.parquet')
 
-	# read photometry data so we can access mean sky counts
+	# read photometry data so we can access mean sky counts and source fluxes
 	# TODO: GENERALIZE!!!
-	phot_df = pd.read_parquet(f'/data/tierras/photometry/{date}/{field}/{ffname}/{date}_{field}_circular_fixed_ap_phot_5.parquet')
+	phot_files = glob(f'/data/tierras/photometry/{date}/{field}/{ffname}/**ap_phot**.parquet')
+	phot_files =sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0]))
+	phot_dfs = []
+	ap_sizes = []
+	for i in range(len(phot_files)):
+		ap_sizes.append(int(phot_files[i].split('/')[-1].split('_')[-1].split('.')[0]))
+		phot_dfs.append(pd.read_parquet(phot_files[i]))
+	ap_sizes = np.array(ap_sizes)
 
 	# identify all the light curves 
 	# lcs = glob('input/internight_precision/data/**global_lc.csv')
@@ -259,6 +269,7 @@ def main(raw_args=None):
 	source_ys = []
 	bp_rp = []
 	G_mags = []
+	chip = []
 
 	times_save = []
 	flux_save = []
@@ -273,8 +284,7 @@ def main(raw_args=None):
 		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
 		seeing_fwhm = np.nanmedian(ancillary_data['FWHM X']) / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
 		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
-
-
+		contaminations = []
 
 	# read in data, skipping sources if they're contaminated
 	n_lcs = len(lcs)
@@ -284,27 +294,35 @@ def main(raw_args=None):
 
 		with open(lcs[i], 'r') as f:
 			comment = f.readline()
-		ap_radii.append(int(comment.split('_')[-1].split('.')[0]))
+		# phot_ind = np.where(ap_sizes == ap_radii[i])[0][0]
+		source_ap_rad = int(comment.split('_')[-1].split('.')[0])
 
 		df = pd.read_csv(lcs[i], comment='#', dtype=np.float64)
 		source_id = lcs[i].split('_')[-2]
-		if source_id == 'TIC362144730':
-			source_id = 'Gaia DR3 4147112604476417792'
+		if source_id == field:
+			gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
+			if not os.path.exists(gaia_id_file):
+				print(f'No Gaia DR3 ID file exists at {gaia_id_file}! Skipping.')
+				continue 
+			else:
+				with open(gaia_id_file, 'r') as f:
+					source_id = f.readline()
 		source_id = int(source_id.split(' ')[-1])
 		source_ind = np.where(sources['source_id'] == source_id)[0][0] 
 		source_x = sources['X pix'][source_ind]
 		source_y = sources['Y pix'][source_ind]
+		source_rp = sources['phot_rp_mean_mag'][source_ind]
+		source_G = sources['gq_photogeo'][source_ind]
+		source_bp_rp = sources['bp_rp'][source_ind]
+		source_chip = sources['Chip'][source_ind]
 
-		if cut_contaminated:
+		contamination = 0
+		if cut_contaminated and (lcs[i].split('_')[-2] != field):
 			# estimate contamination 
 			distances = np.array(np.sqrt((source_x-all_field_sources['X pix'])**2+(source_y-all_field_sources['Y pix'])**2))
 			nearby_inds = np.where((distances <= contaminant_grid_size) & (distances != 0))[0]
 			if len(nearby_inds) > 0:
-				source_rp = sources['phot_rp_mean_mag'][source_ind]
-				source_x = sources['X pix'][source_ind]
-				source_y = sources['Y pix'][source_ind]
-				source_G = sources['gq_photogeo'][source_ind]
-				source_bp_rp = sources['bp_rp'][source_ind]
+				
 
 				nearby_rp = np.array(all_field_sources['phot_rp_mean_mag'][nearby_inds])
 				nearby_x = np.array(all_field_sources['X pix'][nearby_inds] - source_x)
@@ -329,7 +347,7 @@ def main(raw_args=None):
 
 				# estimate contamination by doing aperture photometry on the simulated image
 				# if the measured flux exceeds 1 by a chosen threshold, record the source's index so it can be removed
-				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=ap_radii[i])
+				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=source_ap_rad)
 				phot_table = aperture_photometry(sim_img, ap)
 				contamination = phot_table['aperture_sum'][0] - 1
 
@@ -342,13 +360,17 @@ def main(raw_args=None):
 					# plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=98))
 					# breakpoint()
 					continue
-
+		
+		ap_radii.append(source_ap_rad)
 		rp_mags.append(source_rp)
 		source_ids.append(source_id)
-		source_xs.append(phot_df[f'S{source_ind} X'][best_im_ind])
-		source_ys.append(phot_df[f'S{source_ind} Y'][best_im_ind])
+		source_xs.append(phot_dfs[0][f'S{source_ind} X'][best_im_ind])
+		source_ys.append(phot_dfs[0][f'S{source_ind} Y'][best_im_ind])
 		G_mags.append(source_G)
 		bp_rp.append(source_bp_rp)
+		chip.append(source_chip)
+		if cut_contaminated:
+			contaminations.append(contamination)
 
 		times = np.array(df['BJD TDB'])
 		flux = np.array(df['Flux'])
@@ -370,10 +392,21 @@ def main(raw_args=None):
 		flux_err_save.append(flux_err)
 		sigmas.append(np.nanstd(flux))
 
-		source_fluxes.append(np.nanmedian(phot_df[f'S{source_ind} Source-Sky']))
-		skies.append(np.nanmedian(phot_df[f'S{source_ind} Sky']))
+		# TODO: generalize???
+		source_flux = np.nanmedian(phot_dfs[0][f'S{source_ind} Source-Sky'])
+		source_sky = np.nanmedian(phot_dfs[0][f'S{source_ind} Sky'])
+		source_fluxes.append(source_flux)
+		skies.append(source_sky)
 		# if source_id == 4147126515852964736:
 		# 	breakpoint()
+
+		# flux_estimate = 134565.47264893475*60/GAIN*10**(-(source_rp-10)/2.5)
+		# if source_rp > 12 and source_flux < flux_estimate:
+			# print(source_chip)
+			# print(source_x, source_y)
+			# plt.figure()
+			# plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=98))
+			# breakpoint()
 
 	n_lcs = len(rp_mags)
 	rp_mags = np.array(rp_mags)
@@ -383,12 +416,16 @@ def main(raw_args=None):
 	G_mags = np.array(G_mags)
 	bp_rp = np.array(bp_rp)
 	sigmas = np.array(sigmas)
+	chip = np.array(chip)
 	ap_radii = np.array(ap_radii)
 	source_fluxes = np.array(source_fluxes)
 	skies = np.array(skies)
 	times_save = np.array(times_save, dtype='object')
 	flux_save = np.array(flux_save, dtype='object')
 	flux_err_save = np.array(flux_err_save, dtype='object')
+	if cut_contaminated:
+		contaminations = np.array(contaminations)
+
 	# bin_times_save = np.array(bin_times_save, dtype='object')
 	# bin_flux_save = np.array(bin_flux_save, dtype='object')
 	# bin_flux_err_save = np.array(bin_flux_err_save, dtype='object')
@@ -400,6 +437,7 @@ def main(raw_args=None):
 	source_ys = source_ys[sort]
 	G_mags = G_mags[sort]
 	bp_rp = bp_rp[sort]
+	chip = chip[sort]
 	sigmas = sigmas[sort]
 	ap_radii = ap_radii[sort]
 	source_fluxes = source_fluxes[sort]
@@ -407,6 +445,8 @@ def main(raw_args=None):
 	times_save = times_save[sort]
 	flux_save = flux_save[sort]
 	flux_err_save = flux_err_save[sort]
+	if cut_contaminated:
+		contaminations = contaminations[sort]
 
 	# determine the exposure time
 	exp_times = np.unique(ancillary_data['Exposure Time'])
@@ -442,15 +482,17 @@ def main(raw_args=None):
 	fit_inds = np.where(rp_mags > 12)[0] # do the fitting on non-saturated sources. TODO figure out how to do programattically 
 	fit_x = rp_mags[fit_inds]
 	fit_y = source_fluxes[fit_inds]/exp_time*GAIN
-	popt, pcov = curve_fit(flux_model, fit_x, fit_y, sigma=np.sqrt(fit_y), p0=[23635])
+	popt, pcov = curve_fit(flux_model, fit_x, fit_y, sigma=np.sqrt(fit_y), p0=[23635*GAIN])
 
 	# adjust so that the median is 1
 	expected = popt[0]*10**(-(rp_mags-10)/2.5)*exp_time/GAIN
 	observed = source_fluxes
-	correction_factor = np.nanmedian(observed/expected)
-	popt[0] /= correction_factor 
 
-	plt.plot(rp_mags, source_fluxes, marker='.', ls='')
+	correction_factor = np.nanmedian(observed/expected)
+	popt[0] *= correction_factor 
+
+	plt.scatter(rp_mags, source_fluxes, c=ap_radii, marker='.')
+	plt.plot(rp_mags, expected)
 	plt.plot(rp_mag_grid, popt[0]*10**(-(rp_mag_grid-10)/2.5)*exp_time/GAIN)
 	plt.yscale('log')
 	# breakpoint()
@@ -460,9 +502,9 @@ def main(raw_args=None):
 	sky_photon_noise = np.sqrt(n_pix*mean_sky*GAIN)/(expected_fluxes*GAIN)
 	source_photon_noise = np.sqrt(expected_fluxes*GAIN)/(expected_fluxes*GAIN)
 	scintillation_noise = np.zeros(len(rp_mag_grid))+scint
-	# read_noise = np.sqrt(15.5**2*n_pix)/(expected_fluxes*GAIN)
+	read_noise = np.sqrt(15.5**2*n_pix)/(expected_fluxes*GAIN)
 	pwv_noise = np.zeros(len(rp_mag_grid)) + 250*1e-6
-	total_noise_model = np.sqrt(source_photon_noise**2 + sky_photon_noise**2 + scintillation_noise**2)
+	total_noise_model = np.sqrt(source_photon_noise**2 + sky_photon_noise**2 + read_noise**2 + scintillation_noise**2)
 
 	# fig, ax = plt.subplots(1, 2, figsize=(11,6), sharey=True, sharex=True)
 	fig = plt.figure(figsize=(15,10))
@@ -476,10 +518,10 @@ def main(raw_args=None):
 	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4', ax5:'ax5'}
 
 	ax1.set_title(f'Native cadence ({exp_time} s)', fontsize=14)
-	ax1.plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{scintillation}^2}}$', zorder=1)
+	ax1.plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{read}^2+\sigma_{scintillation}^2}}$', zorder=1)
 	ax1.plot(rp_mag_grid, source_photon_noise*1e6, label='$\sigma_{source}$', zorder=1)
 	ax1.plot(rp_mag_grid, sky_photon_noise*1e6, label='$\sigma_{sky}$', zorder=1)
-	# ax1.plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
+	ax1.plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
 	ax1.plot(rp_mag_grid, scintillation_noise*1e6, label='$\sigma_{scintillation}$')
 	ax1.plot(rp_mag_grid, pwv_noise*1e6, label='250 ppm PWV noise floor')
 
@@ -532,7 +574,7 @@ def main(raw_args=None):
 	ax3.plot(rp_mag_grid, total_noise_model/np.sqrt(ppb)*1e6, lw=2)
 	ax3.plot(rp_mag_grid, source_photon_noise*1e6/np.sqrt(ppb), label='Source photon noise', zorder=1)
 	ax3.plot(rp_mag_grid, sky_photon_noise*1e6/np.sqrt(ppb), label='Sky photon noise', zorder=1)
-	# ax3.plot(rp_mag_grid, read_noise*1e6/np.sqrt(ppb), label='Read noise', zorder=1)
+	ax3.plot(rp_mag_grid, read_noise*1e6/np.sqrt(ppb), label='Read noise', zorder=1)
 	ax3.plot(rp_mag_grid, scintillation_noise*1e6/np.sqrt(ppb), label='Scintillation')
 	ax3.plot(rp_mag_grid, pwv_noise*1e6, label='PWV')
 	ax3.grid(True, which='both', alpha=0.5)
