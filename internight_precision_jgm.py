@@ -301,6 +301,9 @@ def main(raw_args=None):
 
 	sort = np.argsort(rp_mags)
 	rp_mags = rp_mags[sort]
+	print (rp_mags)
+	tic_ind = np.argmin(np.abs(rp_mags - 11.882206))
+	print (tic_ind)
 	source_ids = source_ids[sort]
 	sigmas = sigmas[sort]
 	ap_radii = ap_radii[sort]
@@ -384,7 +387,7 @@ def main(raw_args=None):
 	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='250 ppm PWV noise floor')
 
 	ax[0].plot(rp_mags, sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
-	ax[0].plot(rp_mags[28], sigmas[28]*1e6, marker='*',  markeredgecolor='black', markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+	ax[0].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=8,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
 
 
 	# h2d_bins = [np.linspace(10.6, 17, 50), np.logspace(2,5,75)]
