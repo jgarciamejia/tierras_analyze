@@ -204,6 +204,7 @@ def main(raw_args=None):
 		df = pd.read_csv(lcs[i], comment='#', dtype=np.float64)
 		source_id = lcs[i].split('_')[-2]
 		if source_id == 'TIC362144730':
+			print ('index of TIC362144730 in rp_mags is {}'.format(i))
 			source_id = 'Gaia DR3 4147112604476417792'
 		source_id = int(source_id.split(' ')[-1])
 		source_ind = np.where(sources['source_id'] == source_id)[0][0] 
@@ -366,13 +367,12 @@ def main(raw_args=None):
 
 	fig, ax = plt.subplots(1, 2, figsize=(11,6), sharey=True, sharex=True)
 	for a in ax:
-
-	        a.spines['top'].set_linewidth(2)
-	        a.spines['right'].set_linewidth(2)
-	        a.spines['bottom'].set_linewidth(2)
-	        a.spines['left'].set_linewidth(2)
-	        a.tick_params(axis='both',width=2,length=6,direction='in',which='major')
-	        a.tick_params(axis='both',width=1,length=4,direction='in',which='minor')
+		a.spines['top'].set_linewidth(2)
+		a.spines['right'].set_linewidth(2)
+		a.spines['bottom'].set_linewidth(2)
+		a.spines['left'].set_linewidth(2)
+		a.tick_params(axis='both',width=2,length=6,direction='in',which='major')
+		a.tick_params(axis='both',width=1,length=4,direction='in',which='minor')
 
 	ax[0].set_title(f'Native cadence ({exp_time} s)', fontsize=14)
 	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{scintillation}^2}}$', zorder=1)
