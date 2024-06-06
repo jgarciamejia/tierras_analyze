@@ -204,7 +204,8 @@ def main(raw_args=None):
 		df = pd.read_csv(lcs[i], comment='#', dtype=np.float64)
 		source_id = lcs[i].split('_')[-2]
 		if source_id == 'TIC362144730':
-			print ('index of TIC362144730 in rp_mags is {}'.format(i))
+			TICi = i
+			print ('index of TIC362144730 in rp_mags is {}'.format(TICi))
 			source_id = 'Gaia DR3 4147112604476417792'
 		source_id = int(source_id.split(' ')[-1])
 		source_ind = np.where(sources['source_id'] == source_id)[0][0] 
@@ -383,6 +384,9 @@ def main(raw_args=None):
 	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='250 ppm PWV noise floor')
 
 	ax[0].plot(rp_mags, sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
+	ax[0].plot(rp_mags[28], sigmas[28]*1e6, marker='*',  markeredgecolor='black', markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+
+
 	# h2d_bins = [np.linspace(10.6, 17, 50), np.logspace(2,5,75)]
 	# h2d_cmin = 10
 	# h2d = ax[0].hist2d(rp_mags, sigmas*1e6, bins=h2d_bins, cmin=h2d_cmin, norm=colors.PowerNorm(0.5), zorder=3, alpha=0.9, lw=0)
