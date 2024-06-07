@@ -366,8 +366,8 @@ def main(raw_args=None):
 	source_photon_noise = np.sqrt(expected_fluxes*GAIN)/(expected_fluxes*GAIN)
 	scintillation_noise = np.zeros(len(rp_mag_grid))+scint
 	# read_noise = np.sqrt(15.5**2*n_pix)/(expected_fluxes*GAIN)
-	pwv_noise = np.zeros(len(rp_mag_grid)) + 250*1e-6
-	total_noise_model = np.sqrt(source_photon_noise**2 + sky_photon_noise**2 + scintillation_noise**2)
+	pwv_noise = np.zeros(len(rp_mag_grid)) + 230*1e-6
+	total_noise_model = np.sqrt(source_photon_noise**2 + sky_photon_noise**2 + scintillation_noise**2 + pwv_noise**2)
 
 	fig, ax = plt.subplots(1, 2, figsize=(11,6), sharey=True, sharex=True)
 	for a in ax:
@@ -379,12 +379,12 @@ def main(raw_args=None):
 		a.tick_params(axis='both',width=1,length=4,direction='in',which='minor')
 
 	ax[0].set_title(f'Native cadence ({exp_time} s)', fontsize=14)
-	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{scintillation}^2}}$', zorder=1)
+	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{scintillation}^2 + \sigma_{PWV}^2}}$', zorder=1)
 	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, label='$\sigma_{source}$', zorder=1)
 	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, label='$\sigma_{sky}$', zorder=1)
 	# ax[0].plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
-	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, label='$\sigma_{scintillation}$')
-	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='250 ppm PWV noise floor')
+	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, label='\sigma_{scintillation}')
+	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='\sigma_{PWV} = 230 ppm ')
 
 	ax[0].plot(rp_mags, sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
 	ax[0].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=8,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
