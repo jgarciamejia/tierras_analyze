@@ -209,6 +209,7 @@ def main(raw_args=None):
 			source_id = 'Gaia DR3 4147112604476417792'
 		source_id = int(source_id.split(' ')[-1])
 		source_ind = np.where(sources['source_id'] == source_id)[0][0] 
+		source_rp = sources['phot_rp_mean_mag'][source_ind]
 		source_x = sources['X pix'][source_ind]
 		source_y = sources['Y pix'][source_ind]
 
