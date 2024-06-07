@@ -379,7 +379,7 @@ def main(raw_args=None):
 		a.tick_params(axis='both',width=1,length=4,direction='in',which='minor')
 
 	ax[0].set_title(f'Native cadence ({exp_time} s)', fontsize=14)
-	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{scintillation}^2 + \sigma_{PWV}^2}}$', zorder=1)
+	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{ \sigma_{source}^2 + \sigma_{sky}^2 + \sigma_{scintillation}^2 + \sigma_{PWV}^2 }$', zorder=1)
 	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, label='$\sigma_{source}$', zorder=1)
 	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, label='$\sigma_{sky}$', zorder=1)
 	# ax[0].plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
