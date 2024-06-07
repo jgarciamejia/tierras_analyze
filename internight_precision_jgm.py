@@ -255,7 +255,7 @@ def main(raw_args=None):
 				# 	breakpoint()
 
 				# if the contamination is over the limit, exclude this source from the analysis
-				if contamination > contamination_limit:
+				if contamination > contamination_limit and source_id != 'Gaia DR3 4147112604476417792':
 					# plt.figure()
 					# plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=98))
 					# breakpoint()
@@ -384,11 +384,11 @@ def main(raw_args=None):
 	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, label='$\sigma_{source}$', zorder=1)
 	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, label='$\sigma_{sky}$', zorder=1)
 	# ax[0].plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
-	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, label='\sigma_{scintillation}')
-	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='\sigma_{PWV} = 230 ppm ')
+	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, label='$\sigma_{scintillation}$')
+	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='$\sigma_{PWV} = 230 \, {ppm}$')
 
 	ax[0].plot(rp_mags, sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
-	ax[0].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=8,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+	ax[0].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
 
 
 	# h2d_bins = [np.linspace(10.6, 17, 50), np.logspace(2,5,75)]
@@ -425,6 +425,8 @@ def main(raw_args=None):
 		binned_sigmas[i] = np.nanstd(by[np.where(by!=0)[0]])
 
 	ax[1].plot(rp_mags, binned_sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
+	ax[1].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+
 	# h2d = ax[1].hist2d(rp_mags, binned_sigmas*1e6, bins=h2d_bins, cmin=h2d_cmin, norm=colors.PowerNorm(0.5), zorder=3, alpha=0.9, lw=0)
 	# cb = fig.colorbar(h2d[3], ax=ax[1], pad=0.02, label='N$_{sources}$')
 
