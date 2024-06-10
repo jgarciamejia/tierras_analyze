@@ -380,15 +380,17 @@ def main(raw_args=None):
 		a.tick_params(axis='both',width=1,length=4,direction='in',which='minor')
 
 	ax[0].set_title(f'Native cadence ({exp_time} s)', fontsize=14)
-	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{ \sigma_{source}^2 + \sigma_{sky}^2 + \sigma_{scintillation}^2 + \sigma_{PWV}^2 }$', zorder=1)
-	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, label='$\sigma_{source}$', zorder=1)
-	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, label='$\sigma_{sky}$', zorder=1)
+	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, color = 'royalblue', label='$\sigma_{total}$ = $\sqrt{ \sigma_{source}^2 + \sigma_{sky}^2 + \sigma_{scintillation}^2 + \sigma_{PWV}^2 }$', zorder=1)
+	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, color = 'orangered', label='$\sigma_{source}$', zorder=1)
+	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, color = 'mediumseagreen', label='$\sigma_{sky}$', zorder=1)
 	# ax[0].plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
-	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, label='$\sigma_{scintillation}$')
-	ax[0].plot(rp_mag_grid, pwv_noise*1e6, label='$\sigma_{PWV} = 230 \, {ppm}$')
+	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, color = 'brown', label='$\sigma_{scintillation}$')
+	ax[0].plot(rp_mag_grid, pwv_noise*1e6, color = 'mediumpurple', label='$\sigma_{PWV} = 230 \, {ppm}$')
 
 	ax[0].plot(rp_mags, sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
-	ax[0].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+	ax[0].plot(11.882206, 1884.84, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+
+	#ax[0].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
 
 
 	# h2d_bins = [np.linspace(10.6, 17, 50), np.logspace(2,5,75)]
@@ -425,17 +427,19 @@ def main(raw_args=None):
 		binned_sigmas[i] = np.nanstd(by[np.where(by!=0)[0]])
 
 	ax[1].plot(rp_mags, binned_sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
-	ax[1].plot(rp_mags[tic_ind], binned_sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+	#ax[1].plot(rp_mags[tic_ind], binned_sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+	ax[1].plot(11.882206, 1102.13, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+
 
 	# h2d = ax[1].hist2d(rp_mags, binned_sigmas*1e6, bins=h2d_bins, cmin=h2d_cmin, norm=colors.PowerNorm(0.5), zorder=3, alpha=0.9, lw=0)
 	# cb = fig.colorbar(h2d[3], ax=ax[1], pad=0.02, label='N$_{sources}$')
 
-	ax[1].plot(rp_mag_grid, total_noise_model/np.sqrt(ppb)*1e6, lw=2)
-	ax[1].plot(rp_mag_grid, source_photon_noise*1e6/np.sqrt(ppb), label='Source photon noise', zorder=1)
-	ax[1].plot(rp_mag_grid, sky_photon_noise*1e6/np.sqrt(ppb), label='Sky photon noise', zorder=1)
+	ax[1].plot(rp_mag_grid, total_noise_model/np.sqrt(ppb)*1e6, color = 'royalblue', lw=2)
+	ax[1].plot(rp_mag_grid, source_photon_noise*1e6/np.sqrt(ppb), color = 'orangered', label='Source photon noise', zorder=1)
+	ax[1].plot(rp_mag_grid, sky_photon_noise*1e6/np.sqrt(ppb), color = 'mediumseagreen', label='Sky photon noise', zorder=1)
 	# ax[1].plot(rp_mag_grid, read_noise*1e6/np.sqrt(ppb), label='Read noise', zorder=1)
-	ax[1].plot(rp_mag_grid, scintillation_noise*1e6/np.sqrt(ppb), label='Scintillation')
-	ax[1].plot(rp_mag_grid, pwv_noise*1e6, label='PWV')
+	ax[1].plot(rp_mag_grid, scintillation_noise*1e6/np.sqrt(ppb), color = 'brown', label='Scintillation')
+	ax[1].plot(rp_mag_grid, pwv_noise*1e6, color = 'mediumpurple', label='PWV')
 	ax[1].grid(True, which='both', alpha=0.5)
 	ax[1].set_title(f'Binned ({ppb} min)', fontsize=14)
 	ax[1].set_xlabel('$G_{\mathrm{RP}}$', fontsize=14)
@@ -450,7 +454,7 @@ def main(raw_args=None):
 	# plt.legend()
 	plt.savefig(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_precision.png',dpi=300, transparent=True)
 	set_tierras_permissions(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_precision.png')
-	#plt.close()
+	plt.close()
 
 if __name__ == '__main__':
 	main()
