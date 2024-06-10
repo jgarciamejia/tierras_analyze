@@ -370,6 +370,8 @@ def main(raw_args=None):
 	pwv_noise = np.zeros(len(rp_mag_grid)) + 230*1e-6
 	total_noise_model = np.sqrt(source_photon_noise**2 + sky_photon_noise**2 + scintillation_noise**2 + pwv_noise**2)
 
+	CB_color_cycle = ['#377eb8', '#ff7f00', '#4daf4a','#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
+
 	fig, ax = plt.subplots(1, 2, figsize=(11,6), sharey=True, sharex=True)
 	for a in ax:
 		a.spines['top'].set_linewidth(2)
@@ -380,12 +382,12 @@ def main(raw_args=None):
 		a.tick_params(axis='both',width=1,length=4,direction='in',which='minor')
 
 	ax[0].set_title(f'Native cadence ({exp_time} s)', fontsize=14)
-	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, color = 'royalblue', label='$\sigma_{total}$ = $\sqrt{ \sigma_{source}^2 + \sigma_{sky}^2 + \sigma_{scintillation}^2 + \sigma_{PWV}^2 }$', zorder=1)
-	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, color = 'orangered', label='$\sigma_{source}$', zorder=1)
-	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, color = 'mediumseagreen', label='$\sigma_{sky}$', zorder=1)
+	ax[0].plot(rp_mag_grid, total_noise_model*1e6, lw=2, color = CB_color_cycle[0], label='$\sigma_{total}$ = $\sqrt{ \sigma_{source}^2 + \sigma_{sky}^2 + \sigma_{scintillation}^2 + \sigma_{PWV}^2 }$', zorder=1)
+	ax[0].plot(rp_mag_grid, source_photon_noise*1e6, color = CB_color_cycle[1], label='$\sigma_{source}$', zorder=1)
+	ax[0].plot(rp_mag_grid, sky_photon_noise*1e6, color = CB_color_cycle[2], label='$\sigma_{sky}$', zorder=1)
 	# ax[0].plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
-	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, color = 'brown', label='$\sigma_{scintillation}$')
-	ax[0].plot(rp_mag_grid, pwv_noise*1e6, color = 'mediumpurple', label='$\sigma_{PWV} = 230 \, {ppm}$')
+	ax[0].plot(rp_mag_grid, scintillation_noise*1e6, color = CB_color_cycle[3], label='$\sigma_{scintillation}$')
+	ax[0].plot(rp_mag_grid, pwv_noise*1e6, color = CB_color_cycle[4], label='$\sigma_{PWV} = 230 \, {ppm}$')
 
 	ax[0].plot(rp_mags, sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
 	ax[0].plot(11.882206, 1884.84, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
@@ -434,12 +436,12 @@ def main(raw_args=None):
 	# h2d = ax[1].hist2d(rp_mags, binned_sigmas*1e6, bins=h2d_bins, cmin=h2d_cmin, norm=colors.PowerNorm(0.5), zorder=3, alpha=0.9, lw=0)
 	# cb = fig.colorbar(h2d[3], ax=ax[1], pad=0.02, label='N$_{sources}$')
 
-	ax[1].plot(rp_mag_grid, total_noise_model/np.sqrt(ppb)*1e6, color = 'royalblue', lw=2)
-	ax[1].plot(rp_mag_grid, source_photon_noise*1e6/np.sqrt(ppb), color = 'orangered', label='Source photon noise', zorder=1)
-	ax[1].plot(rp_mag_grid, sky_photon_noise*1e6/np.sqrt(ppb), color = 'mediumseagreen', label='Sky photon noise', zorder=1)
+	ax[1].plot(rp_mag_grid, total_noise_model/np.sqrt(ppb)*1e6, color = CB_color_cycle[0], lw=2)
+	ax[1].plot(rp_mag_grid, source_photon_noise*1e6/np.sqrt(ppb), color = CB_color_cycle[1], label='Source photon noise', zorder=1)
+	ax[1].plot(rp_mag_grid, sky_photon_noise*1e6/np.sqrt(ppb), color = CB_color_cycle[2], label='Sky photon noise', zorder=1)
 	# ax[1].plot(rp_mag_grid, read_noise*1e6/np.sqrt(ppb), label='Read noise', zorder=1)
-	ax[1].plot(rp_mag_grid, scintillation_noise*1e6/np.sqrt(ppb), color = 'brown', label='Scintillation')
-	ax[1].plot(rp_mag_grid, pwv_noise*1e6, color = 'mediumpurple', label='PWV')
+	ax[1].plot(rp_mag_grid, scintillation_noise*1e6/np.sqrt(ppb), color = CB_color_cycle[3], label='Scintillation')
+	ax[1].plot(rp_mag_grid, pwv_noise*1e6, color = CB_color_cycle[4], label='PWV')
 	ax[1].grid(True, which='both', alpha=0.5)
 	ax[1].set_title(f'Binned ({ppb} min)', fontsize=14)
 	ax[1].tick_params(labelsize=12)
