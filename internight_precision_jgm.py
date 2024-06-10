@@ -448,6 +448,8 @@ def main(raw_args=None):
 	ax[1].set_xlabel('$G_{\mathrm{RP}}$', fontsize=14)
 	ax[1].set_ylabel('$\sigma$ (ppm)', fontsize=14)
 
+	ax[1].yaxis.set_tick_params(labelleft=True)
+
 	plt.tight_layout()
 
 	# plt.figure()
