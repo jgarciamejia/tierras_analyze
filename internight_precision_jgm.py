@@ -442,9 +442,12 @@ def main(raw_args=None):
 	ax[1].plot(rp_mag_grid, pwv_noise*1e6, color = 'mediumpurple', label='PWV')
 	ax[1].grid(True, which='both', alpha=0.5)
 	ax[1].set_title(f'Binned ({ppb} min)', fontsize=14)
-	ax[1].set_xlabel('$G_{\mathrm{RP}}$', fontsize=14)
 	ax[1].tick_params(labelsize=12)
 	ax[1].set_ylim(100, 3e5)
+
+	ax[1].set_xlabel('$G_{\mathrm{RP}}$', fontsize=14)
+	ax[1].set_ylabel('$\sigma$ (ppm)', fontsize=14)
+
 	plt.tight_layout()
 
 	# plt.figure()
