@@ -425,7 +425,7 @@ def main(raw_args=None):
 		binned_sigmas[i] = np.nanstd(by[np.where(by!=0)[0]])
 
 	ax[1].plot(rp_mags, binned_sigmas*1e6, marker='.', color='k', alpha=0.4, ls='', zorder=0, ms=3)
-	ax[1].plot(rp_mags[tic_ind], sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
+	ax[1].plot(rp_mags[tic_ind], binned_sigmas[tic_ind]*1e6, marker='*',  markeredgecolor='black', ms=10,markerfacecolor='white', ls='', zorder=10,label = 'LEP 1805-1422')
 
 	# h2d = ax[1].hist2d(rp_mags, binned_sigmas*1e6, bins=h2d_bins, cmin=h2d_cmin, norm=colors.PowerNorm(0.5), zorder=3, alpha=0.9, lw=0)
 	# cb = fig.colorbar(h2d[3], ax=ax[1], pad=0.02, label='N$_{sources}$')
