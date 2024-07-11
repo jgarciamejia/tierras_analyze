@@ -160,7 +160,6 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 			# alc_save[:,jj] = F_e
 			f_corr_save[:, jj]  = F_corr
 			# sigma_save[:, jj] = sigma_tot
-
 			
 		# update the weights using the measured standard deviations	
 		weights_new = 1/stddevs_measured**2
@@ -172,7 +171,7 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 		count += 1 
 		if count == max_iters:
 			break	
-
+	
 	weights = weights_new
 	# determine if any references should be totally thrown out based on the ratio of their measured/expected noise
 	noise_ratios = stddevs_measured/stddevs_expected
@@ -316,25 +315,28 @@ def plot_target_summary(data_dict, bin_mins=10):
 	date = data_dict['Date']
 	ffname = data_dict['ffname']
 
-	times_ = data_dict['BJD']	
+	nan_inds = ~np.isnan(data_dict['Flux'])
+
+	times_ = data_dict['BJD'][nan_inds]
 	x_offset =  int(np.floor(times_[0]))
 	times = times_ - x_offset
 
-	flux = data_dict['Flux']
-	flux_err = data_dict['Flux Error']
-	alc = data_dict['ALC']
-	alc_err = data_dict['ALC Error']
-	corr_flux = data_dict['Corrected Flux']
-	corr_flux_err = data_dict['Corrected Flux Error']
-	airmass = data_dict['Airmass']
-	ha = data_dict['Hour Angle']
-	sky = data_dict['Sky']
-	x = data_dict['X']
-	y = data_dict['Y']
-	fwhm_x = data_dict['FWHM X']
-	fwhm_y = data_dict['FWHM Y']
-	humidity = data_dict['Dome Humidity']
-	exptimes = data_dict['Exposure Time']
+
+	flux = data_dict['Flux'][nan_inds]
+	flux_err = data_dict['Flux Error'][nan_inds]
+	alc = data_dict['ALC'][nan_inds]
+	alc_err = data_dict['ALC Error'][nan_inds]
+	corr_flux = data_dict['Corrected Flux'][nan_inds]
+	corr_flux_err = data_dict['Corrected Flux Error'][nan_inds]
+	airmass = data_dict['Airmass'][nan_inds]
+	ha = data_dict['Hour Angle'][nan_inds]
+	sky = data_dict['Sky'][nan_inds]
+	x = data_dict['X'][nan_inds]
+	y = data_dict['Y'][nan_inds]
+	fwhm_x = data_dict['FWHM X'][nan_inds]
+	fwhm_y = data_dict['FWHM Y'][nan_inds]
+	humidity = data_dict['Dome Humidity'][nan_inds]
+	exptimes = data_dict['Exposure Time'][nan_inds]
 
 	fig = plt.figure(figsize=(8,14))	
 	gs = gridspec.GridSpec(8,1,height_ratios=[0.75,1,0.75,0.75,0.75,0.75,0.75,1])
@@ -698,8 +700,8 @@ def main(raw_args=None):
 	fwhm_y = np.zeros(n_ims, dtype='float16')
 	flux = np.zeros((n_dfs, n_ims, n_sources), dtype='float32')
 	flux_err = np.zeros_like(flux)
-	non_linear_flags = np.zeros_like(flux, dtype='int')
-	saturated_flags = np.zeros_like(flux, dtype='int')
+	non_linear_flags = np.zeros_like(flux, dtype='int8')
+	saturated_flags = np.zeros_like(flux, dtype='int8')
 	x = np.zeros((n_ims, n_sources), dtype='float32')
 	y = np.zeros_like(x)
 	sky = np.zeros_like(x)
@@ -769,8 +771,9 @@ def main(raw_args=None):
 	x_deviations = np.median(x - np.nanmedian(x, axis=0), axis=1)
 	y_deviations = np.median(y - np.nanmedian(y, axis=0), axis=1)
 	median_sky = np.median(sky, axis=1)/exposure_times
-	
-	# optionally restrict to SAME 
+	median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1))
+
+	# optionally restrict to SAME
 	if same: 
 		same_mask = np.zeros(len(fwhm_x), dtype='int')
 
@@ -779,12 +782,14 @@ def main(raw_args=None):
 		airmass_inds = np.where(airmasses > 2.0)[0]
 		sky_inds = np.where(median_sky > 5)[0]
 		# humidity_inds = np.where(humidity > 50)[0]
+		flux_inds = np.where(median_flux < 0.5)[0]
 		same_mask[fwhm_inds] = 1
 		same_mask[pos_inds] = 1
 		same_mask[airmass_inds] = 1
 		same_mask[sky_inds] = 1
 		# same_mask[humidity_inds] = 1
-
+		same_mask[flux_inds] = 1
+		breakpoint()	
 		print(f'Restrictions cut to {len(np.where(same_mask == 0)[0])} SAME exposures out of {len(x_deviations)} total exposures.')
 		mask = same_mask==1
 
@@ -807,7 +812,11 @@ def main(raw_args=None):
 	x_range = np.nanmax(time_deltas)
 
 	try:
-		tierras_target_id = identify_target_gaia_id(field, source_df, x_pix=targ_x_pix, y_pix=targ_y_pix)
+		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
+		with open(gaia_id_file, 'r') as f:
+			tierras_target_id = f.readline()
+		tierras_target_id = int(tierras_target_id.split(' ')[-1])
+		# tierras_target_id = identify_target_gaia_id(field, source_df, x_pix=targ_x_pix, y_pix=targ_y_pix)
 	except:
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
@@ -1005,11 +1014,19 @@ def main(raw_args=None):
 			output_df.to_csv(filename, index=0, na_rep=np.nan)
 			filename.close()
 			set_tierras_permissions(output_path/f'{date}_{target}_lc.csv')
-
+			
+			if plot: 
+				data_dict = {'Target':target, 'Date':date, 'ffname':ffname, 'BJD':times+x_offset, 'Flux':flux[best_phot_file][:,tt], 
+				 'Flux Error':flux_err[best_phot_file][:,tt], 'ALC':best_alc, 'ALC Error':best_alc_err, 'Corrected Flux':best_corr_flux,
+				 'Corrected Flux Error':best_corr_flux_err, 'Airmass':airmasses, 'Hour Angle':ha, 'Sky':sky[:,tt], 'X':x[:,tt], 'Y':y[:,tt], 
+				 'FWHM X':fwhm_x, 'FWHM Y':fwhm_y, 'Dome Humidity':humidity, 'Exposure Time':exposure_times}
+				
+				plot_target_summary(data_dict)
 			gc.collect() # do garbage collection to prevent memory leaks 
 			print(f'tloop: {time.time()-tloop:.1f}')
 
-		# breakpoint()
+			
+	
 	if email: 
 		# Send summary plots 
 		subject = f'[Tierras]_Data_Analysis_Report:{date}_{field}'

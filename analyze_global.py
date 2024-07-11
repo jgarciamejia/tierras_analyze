@@ -115,19 +115,19 @@ def main(raw_args=None):
 					break
 		date_list = date_list[dates_to_keep]
 
-	# date_list = date_list[0:4]
+	# date_list = date_list[0:7]
 	dates = np.array([i.split('/')[4] for i in date_list])
 
 	# skip some nights of processing for TIC362144730
 	# TODO: automate this process 
 	if field == 'TIC362144730':
-		bad_dates = ['20240519', '20240520', '20240531']
+		bad_dates = ['20240519', '20240520', '20240531', '20240607', '20240609', '20240610', '20240706', '20240707', '20240708']
 		dates_to_remove = []
 		for i in range(len(bad_dates)):
 			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
 		dates = np.delete(dates, dates_to_remove)
 		date_list = np.delete(date_list, dates_to_remove)		
-	
+
 	if field == 'LHS2919':
 		bad_dates = ['20240530', '20240531', '20240601', '20240602']
 		dates_to_remove = []
@@ -136,7 +136,6 @@ def main(raw_args=None):
 		dates = np.delete(dates, dates_to_remove)
 		date_list = np.delete(date_list, dates_to_remove)		
 
-	# date_list = np.array(date_list)[[0,-1]]
 	# read in the source df's from each night 
 	source_dfs = []
 	source_ids = []
@@ -165,9 +164,8 @@ def main(raw_args=None):
 	for i in range(len(source_dfs)):
 		source_inds.append([])
 		for j in range(len(common_source_ids)):
-
 			source_inds[i].extend([np.where(source_dfs[i]['source_id'] == common_source_ids[j])[0][0]])
-
+	
 	#TODO: what happens when there are different sources on different nights (i.e., if we shifted the field??)
 	# figure out how big the arrays need to be to hold the data
 	# NOTE this assumes that every directory has the exact same photometry files...	
@@ -189,8 +187,8 @@ def main(raw_args=None):
 	fwhm_y = np.zeros(n_ims, dtype='float16')
 	flux = np.zeros((n_dfs, n_ims, n_sources), dtype='float32')
 	flux_err = np.zeros_like(flux)
-	non_linear_flags = np.zeros_like(flux, dtype='int')
-	saturated_flags = np.zeros_like(flux, dtype='int')
+	non_linear_flags = np.zeros_like(flux, dtype='int8')
+	saturated_flags = np.zeros_like(flux, dtype='int8')
 	x = np.zeros((n_ims, n_sources), dtype='float32')
 	y = np.zeros_like(x)
 	sky = np.zeros_like(x)
@@ -264,10 +262,10 @@ def main(raw_args=None):
 	median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1))
 	
 	# optionally restrict to SAME 
+	same_mask = np.zeros(len(fwhm_x), dtype='int')
 	if same: 
-		same_mask = np.zeros(len(fwhm_x), dtype='int')
 
-		fwhm_inds = np.where(fwhm_x > 3)[0]
+		fwhm_inds = np.where(fwhm_x > 3.0)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
 		airmass_inds = np.where(airmasses > 2.0)[0]
 		sky_inds = np.where(median_sky > 5)[0]
@@ -279,7 +277,6 @@ def main(raw_args=None):
 		same_mask[sky_inds] = 1
 		# same_mask[humidity_inds] = 1
 		same_mask[flux_inds] = 1
-		
 		mask = same_mask==1
 
 		# times[mask] = np.nan
@@ -303,11 +300,12 @@ def main(raw_args=None):
 		night_inds = np.where((times >= times_list[i][0]) & (times <= times_list[i][-1]))[0]
 		night_inds_list.append(night_inds)
 		tot_exposure_time = np.nansum(exposure_times[night_inds])/3600
-		if tot_exposure_time < minimum_night_duration:
+		if tot_exposure_time <= minimum_night_duration:
 			same_mask[night_inds] = 1
 
 			print(f'{dates[i]} dropped! Less than {minimum_night_duration} hours of exposures.')
 			dates_to_remove.append(i)
+	
 	dates = np.delete(dates, dates_to_remove)
 	date_list = np.delete(date_list, dates_to_remove)		
 	times_list = np.delete(times_list, dates_to_remove)
@@ -332,50 +330,55 @@ def main(raw_args=None):
 	x_range = np.nanmax(time_deltas)
 
 	try:
-		tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix)
+		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
+		with open(gaia_id_file, 'r') as f:
+			tierras_target_id = f.readline()
+		tierras_target_id = int(tierras_target_id.split(' ')[-1])
+		# tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix)
 	except:
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
-	
-	binned_times = np.zeros(len(night_inds_list))
-	binned_airmass = np.zeros_like(binned_times)
-	binned_exposure_time = np.zeros_like(binned_times)
-	binned_flux = np.zeros((n_dfs, len(night_inds_list), n_sources))
-	binned_flux_err = np.zeros_like(binned_flux)
-	binned_nl_flags = np.zeros_like(binned_flux, dtype='int')
 
-	for i in range(len(night_inds_list)):
-		binned_times[i] = np.mean(times[night_inds_list[i]])
-		binned_airmass[i] = np.mean(airmasses[night_inds_list[i]])
-		binned_exposure_time[i] = np.nansum(exposure_times[night_inds_list[i]])
-		for j in range(n_dfs):
-			binned_flux[j,i,:] = np.nanmean(flux[j,night_inds_list[i]], axis=0)
-			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,night_inds_list[i]],axis=0)/np.sqrt(len(night_inds_list[i]))
-			binned_nl_flags[j,i,np.sum(non_linear_flags[j,night_inds_list[i]], axis=0)>1] = 1
-
-	# ppb = 4 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
-	# n_bins = int(np.ceil(n_ims/ppb))
-	# bin_inds = []
-	# for i in range(n_bins):
-	# 	if i != n_bins - 1:
-	# 		bin_inds.append(np.arange(i*ppb, (i+1)*ppb))
-	# 	else:
-	# 		bin_inds.append(np.arange(i*ppb, n_ims))
-	# bin_inds = np.array(bin_inds)
-
-	# binned_times = np.zeros(len(bin_inds))
+	# # NOTE: Uncomment these lines if you want to do the weighting on nightly medians only. 
+	# binned_times = np.zeros(len(night_inds_list))
 	# binned_airmass = np.zeros_like(binned_times)
 	# binned_exposure_time = np.zeros_like(binned_times)
-	# binned_flux = np.zeros((n_dfs, len(bin_inds), n_sources))
+	# binned_flux = np.zeros((n_dfs, len(night_inds_list), n_sources))
 	# binned_flux_err = np.zeros_like(binned_flux)
 	# binned_nl_flags = np.zeros_like(binned_flux, dtype='int')
-	# for i in range(n_bins):
-	# 	binned_times[i] = np.mean(times[bin_inds[i]])
-	# 	binned_airmass[i] = np.mean(airmasses[bin_inds[i]])
-	# 	binned_exposure_time[i] = np.nansum(exposure_times[bin_inds[i]])
+
+	# for i in range(len(night_inds_list)):
+	# 	binned_times[i] = np.mean(times[night_inds_list[i]])
+	# 	binned_airmass[i] = np.nanmean(airmasses[night_inds_list[i]])
+	# 	binned_exposure_time[i] = np.nansum(exposure_times[night_inds_list[i]])
 	# 	for j in range(n_dfs):
-	# 		binned_flux[j,i,:] = np.nanmean(flux[j,bin_inds[i]], axis=0)
-	# 		binned_flux_err[j,i,:] = np.nanmean(flux_err[j,bin_inds[i]],axis=0)/np.sqrt(len(bin_inds[i]))
-	# 		binned_nl_flags[j,i,np.sum(non_linear_flags[j,bin_inds[i]], axis=0)>1] = 1
+	# 		binned_flux[j,i,:] = np.nanmedian(flux[j,night_inds_list[i]], axis=0)
+	# 		binned_flux_err[j,i,:] = np.nanmean(flux_err[j,night_inds_list[i]],axis=0)/np.sqrt(len(night_inds_list[i]))
+	# 		binned_nl_flags[j,i,np.sum(non_linear_flags[j,night_inds_list[i]], axis=0)>1] = 1
+
+	ppb = 5 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
+	n_bins = int(np.ceil(n_ims/ppb))
+	bin_inds = []
+	for i in range(n_bins):
+		if i != n_bins - 1:
+			bin_inds.append(np.arange(i*ppb, (i+1)*ppb))
+		else:
+			bin_inds.append(np.arange(i*ppb, n_ims))
+	bin_inds = np.array(bin_inds)
+
+	binned_times = np.zeros(len(bin_inds))
+	binned_airmass = np.zeros_like(binned_times)
+	binned_exposure_time = np.zeros_like(binned_times)
+	binned_flux = np.zeros((n_dfs, len(bin_inds), n_sources))
+	binned_flux_err = np.zeros_like(binned_flux)
+	binned_nl_flags = np.zeros_like(binned_flux, dtype='int')
+	for i in range(n_bins):
+		binned_times[i] = np.mean(times[bin_inds[i]])
+		binned_airmass[i] = np.mean(airmasses[bin_inds[i]])
+		binned_exposure_time[i] = np.nansum(exposure_times[bin_inds[i]])
+		for j in range(n_dfs):
+			binned_flux[j,i,:] = np.nanmean(flux[j,bin_inds[i]], axis=0)
+			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,bin_inds[i]],axis=0)/np.sqrt(len(bin_inds[i]))
+			binned_nl_flags[j,i,np.sum(non_linear_flags[j,bin_inds[i]], axis=0)>1] = 1
 
 	
 	avg_mearth_times = np.zeros(n_sources)
@@ -416,8 +419,8 @@ def main(raw_args=None):
 		
 		if common_source_ids[tt] == tierras_target_id:
 			target = field
-			target_gaia_id = tierras_target_id 
-			plot = True
+			target_gaia_id = tierras_target_id
+			plot = True	
 		else:
 			target = 'Gaia DR3 '+str(common_source_ids[tt])
 			target_gaia_id = identify_target_gaia_id(target)
@@ -501,6 +504,7 @@ def main(raw_args=None):
 				best_corr_flux_err = corr_flux_err
 				best_alc = alc
 				best_alc_err = alc_err
+		
 
 		if best_corr_flux is not None:
 			
@@ -513,7 +517,7 @@ def main(raw_args=None):
 			if med_std_over_theo > 10:
 				print('Possible variable!')
 				plot = False
-			
+
 
 			# do a plot if this is the tierras target 
 

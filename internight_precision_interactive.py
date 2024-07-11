@@ -491,13 +491,38 @@ def main(raw_args=None):
 	correction_factor = np.nanmedian(observed/expected)
 	popt[0] *= correction_factor 
 
-	plt.scatter(rp_mags, source_fluxes, c=ap_radii, marker='.')
-	plt.plot(rp_mags, expected)
-	plt.plot(rp_mag_grid, popt[0]*10**(-(rp_mag_grid-10)/2.5)*exp_time/GAIN)
-	plt.yscale('log')
+	x_model = np.arange(0,7,0.01)	
+	ms_model = -2 + 4.25*x_model
+	color_inds = np.zeros(len(rp_mags))
+	for jj in range(len(rp_mags)):
+		model_ind = np.argmin(abs(x_model-bp_rp[jj]))
+		if G_mags[jj] < ms_model[model_ind]:
+			color_inds[jj] = 1
+
+	fig, ax = plt.subplots(1,2,figsize=(8,5))
+	ax[0].scatter(bp_rp, G_mags, c=color_inds)
+	ax[0].plot(x_model, ms_model)
+	ax[0].set_xlabel('Bp-Rp', fontsize=14)
+	ax[0].set_ylabel('G', fontsize=14)
+	ax[0].tick_params(labelsize=12)
+	ax[0].grid(alpha=0.8)
+	ax[0].invert_yaxis()
+
+	sc = ax[1].scatter(rp_mags, source_fluxes, c=color_inds, marker='.')
+	# ax[1].colorbar(sc, label='Bp-Rp')
+	# plt.plot(rp_mag_grid, popt[0]*10**(-(rp_mag_grid-10)/2.5)*exp_time/GAIN)
+	ax[1].set_yscale('log')
+	ax[1].set_ylabel('Tierras Flux (ADU)', fontsize=14)
+	ax[1].set_xlabel('Gaia Rp mag', fontsize=14)
+	ax[1].tick_params(labelsize=12)
+	ax[1].grid(alpha=0.8)
+
+	plt.tight_layout()
 	# breakpoint()
 	expected_fluxes = popt[0]*10**(-(rp_mag_grid-10)/2.5)*exp_time/GAIN
 
+	
+	breakpoint()
 
 	sky_photon_noise = np.sqrt(n_pix*mean_sky*GAIN)/(expected_fluxes*GAIN)
 	source_photon_noise = np.sqrt(expected_fluxes*GAIN)/(expected_fluxes*GAIN)

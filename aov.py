@@ -65,7 +65,7 @@ def aov(times, flux, flux_err):
 
 if __name__ == '__main__':
 
-    target ='Gaia DR3 4147120983934854400'
+    target ='Gaia DR3 4146925275198041216'
 
     lc_path = f'/data/tierras/fields/TIC362144730/sources/lightcurves/{target}_global_lc.csv'
     df = pd.read_csv(lc_path, comment='#')
@@ -114,11 +114,11 @@ if __name__ == '__main__':
     # ax[2].plot(phased_times, phased_flux, marker='.', ls='')
     
     # ax[2].set_title(f'Folded on {best_per:.5} d')
-    res_dict = periodbase.saov.aov_periodfind(times, flux, flux_err, magsarefluxes=True, startp=1.011, endp=1.0125, stepsize=0.05/86400, autofreq=False)
+    res_dict = periodbase.saov.aov_periodfind(times, flux, flux_err, magsarefluxes=True, startp=0.3, endp=1.1, stepsize=1/86400, autofreq=False)
     ax[1].plot(res_dict['periods'], res_dict['lspvals'], marker='.')
 
     best_per = res_dict['bestperiod']
-    best_per = 1.0125
+    # best_per = 1.0125
     phased_times = times % best_per / best_per
     sort = np.argsort(phased_times)
     phased_times = phased_times[sort]
