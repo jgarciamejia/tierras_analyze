@@ -187,8 +187,8 @@ def main(raw_args=None):
 	fwhm_y = np.zeros(n_ims, dtype='float16')
 	flux = np.zeros((n_dfs, n_ims, n_sources), dtype='float32')
 	flux_err = np.zeros_like(flux)
-	non_linear_flags = np.zeros_like(flux, dtype='int8')
-	saturated_flags = np.zeros_like(flux, dtype='int8')
+	non_linear_flags = np.zeros_like(flux, dtype='bool')
+	saturated_flags = np.zeros_like(flux, dtype='bool')
 	x = np.zeros((n_ims, n_sources), dtype='float32')
 	y = np.zeros_like(x)
 	sky = np.zeros_like(x)
@@ -325,6 +325,7 @@ def main(raw_args=None):
 	sky[mask,:] = np.nan
 	print(f'Quality restrictions cut to {len(np.where(same_mask == 0)[0])} exposures out of {len(x_deviations)} total exposures. Data are on {len(dates)} nights.')
 
+	breakpoint()
 	# determine maximum time range covered by all of the nights, we'll need this for plotting 
 	time_deltas = [i[-1]-i[0] for i in times_list]
 	x_range = np.nanmax(time_deltas)
@@ -385,6 +386,7 @@ def main(raw_args=None):
 
 	# choose a set of references and generate weights
 	max_refs = 1000
+	# max_refs = n_sources
 	if len(common_source_ids) > max_refs:
 		ref_gaia_ids = common_source_ids[0:max_refs]
 		ref_inds = np.arange(max_refs)
