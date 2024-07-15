@@ -82,6 +82,7 @@ def main(raw_args=None):
 	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
 	ap.add_argument("-minimum_night_duration", required=False, default=1, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
+	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
 
 	args = ap.parse_args(raw_args)
 
@@ -94,7 +95,7 @@ def main(raw_args=None):
 	targ_y_pix = args.target_y_pix
 	same = t_or_f(args.SAME)
 	minimum_night_duration = args.minimum_night_duration
-
+	ap_rad = args.ap_rad	
 	if args.target is None: 
 		target = field 
 	else:
@@ -173,9 +174,14 @@ def main(raw_args=None):
 	n_ims = 0 
 	for i in range(len(date_list)):
 		phot_files = glob(date_list[i]+'/**phot**.parquet')
-		n_dfs = len(phot_files)
+		if ap_rad is None:
+			n_dfs = len(phot_files)
+		else:
+			n_dfs = 1
 		if len(phot_files) != 0:
 			n_ims += len(pq.read_table(phot_files[0]))
+
+			
 
 	times = np.zeros(n_ims, dtype='float64')
 	airmasses = np.zeros(n_ims, dtype='float16')
@@ -208,7 +214,12 @@ def main(raw_args=None):
 			continue 
 		phot_files = sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0])) # sort on aperture size so everything is in order
 
-		n_dfs = len(phot_files)
+		if ap_rad is not None:
+			phot_file_radii = np.array([float(i.split('/')[-1].split('.')[-2].split('_')[-1]) for i in phot_files])
+			df_ind = np.where(phot_file_radii == ap_rad)[0][0]
+			n_dfs = 1
+		else:
+			n_dfs = len(phot_files)
 
 		ancillary_tab = pq.read_table(ancillary_file, columns=ancillary_cols)
 
@@ -226,7 +237,11 @@ def main(raw_args=None):
 				# use_cols.append(f'S{source_inds[i][k]} X FWHM')
 				# use_cols.append(f'S{source_inds[i][k]} Y FWHM')
 
-			data_tab = pq.read_table(phot_files[j], columns=use_cols, memory_map=True)
+			if ap_rad is not None:
+				data_tab = pq.read_table(phot_files[df_ind], columns=use_cols, memory_map=True)
+			else:
+				data_tab = pq.read_table(phot_files[j], columns=use_cols, memory_map=True)
+
 			stop = start+len(data_tab)
 
 			times[start:stop] = np.array(ancillary_tab['BJD TDB'])
@@ -265,7 +280,7 @@ def main(raw_args=None):
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
 	if same: 
 
-		fwhm_inds = np.where(fwhm_x > 3.0)[0]
+		fwhm_inds = np.where(fwhm_x > 2.8)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
 		airmass_inds = np.where(airmasses > 2.0)[0]
 		sky_inds = np.where(median_sky > 5)[0]
@@ -386,7 +401,6 @@ def main(raw_args=None):
 
 	# choose a set of references and generate weights
 	max_refs = 1000
-	# max_refs = n_sources
 	if len(common_source_ids) > max_refs:
 		ref_gaia_ids = common_source_ids[0:max_refs]
 		ref_inds = np.arange(max_refs)
@@ -415,6 +429,11 @@ def main(raw_args=None):
 		set_tierras_permissions(f'/data/tierras/fields/{field}/sources')
 	weights_df.to_csv(f'/data/tierras/fields/{field}/sources/weights.csv', index=0)
 	set_tierras_permissions(f'/data/tierras/fields/{field}/sources/weights.csv')
+	
+	# reevaluate bin_inds to be the indices on each night. The optimal photometric aperture will be chosen based on which one minimizes sigma_n2n
+	bin_inds = []
+	for i in range(len(times_list)):
+		bin_inds.append(np.where((times >= times_list[i][0]) & (times <= times_list[i][-1]))[0])
 	
 	for tt in range(len(common_source_ids)):
 		tloop = time.time()
@@ -491,12 +510,18 @@ def main(raw_args=None):
 			norm = np.nanmedian(corr_flux_sc)
 			corr_flux_sc /= norm 
 
-			# Evaluate the median standard deviation over 5-minute intervals 
-			stddevs = np.zeros(len(bin_inds))
-			for k in range(len(bin_inds)):
-				stddevs[k] = np.nanstd(corr_flux_sc[bin_inds[k]])
+			# # Evaluate the median standard deviation over 5-minute intervals 
+			# stddevs = np.zeros(len(bin_inds))
+			# for k in range(len(bin_inds)):
+			# 	stddevs[k] = np.nanstd(corr_flux_sc[bin_inds[k]])
 			
-			med_stddevs[i] = np.nanmedian(stddevs)	
+			# med_stddevs[i] = np.nanmedian(stddevs)	
+
+			# evaluate sigma_n2n (stddev of nightly medians)
+			medians = np.zeros(len(bin_inds))
+			for k in range(len(bin_inds)):
+				medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]])
+			med_stddevs[i] = np.nanstd(medians)
 
 			# if this light curve is better than the previous ones, store it for later
 			if med_stddevs[i] < best_med_stddev: 
@@ -760,7 +785,10 @@ def main(raw_args=None):
 				os.mkdir(output_path)
 				set_tierras_permissions(output_path)
 
-			best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
+			if ap_rad is not None:
+				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
+			else:
+				best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
 
 			if os.path.exists(output_path/f'{target}_global_lc.csv'):
 				os.remove(output_path/f'{target}_global_lc.csv')

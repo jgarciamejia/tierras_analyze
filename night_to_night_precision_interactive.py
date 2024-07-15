@@ -51,7 +51,7 @@ def main(raw_args=None):
 		else:
 			return
 		
-		print(f'Clicked on {source_ids[point]}')
+		print(f'Clicked on {source_ids[point]}, sigma_n2n = {night_to_nights[point]*1e6:.0f}')
 		if highlight:
 			ax1.lines[-1].remove()
 			ax3.lines[-1].remove()
@@ -355,9 +355,10 @@ def main(raw_args=None):
 			# with open(lc_files[i], 'r') as file:
 			# 	comment.append(file.readline())
 			ap_size = ap_rad[i]
-			
-			weight = weights_df[ref_ind, ap_size-4] #TODO: THIS WILL BREAK WITH MORE APS
 
+			# weight = weights_df[ref_ind, ap_size-4] #TODO: THIS WILL BREAK WITH MORE APS
+
+			weight = weights_df[ref_ind, 1] #TODO: this is not right
 			if weight != 0:
 				weighted_ref_rp.append(source_rp)
 				weighted_ref_n2n.append(n2n)
@@ -430,20 +431,20 @@ def main(raw_args=None):
 	print(f'Median observed/theory (calculated uncertainties): {np.nanmedian(night_to_nights/night_to_nights_theory_calculated):.1f}')
 	print(f'Median observed/theory (measured scatter): {np.nanmedian(night_to_nights/night_to_nights_theory_measured):.1f}')
 
-	plt.figure()
+	# plt.figure()
 
-	median_ref_bp_rp = np.nanmedian(weighted_ref_bp_rp)
+	# median_ref_bp_rp = np.nanmedian(weighted_ref_bp_rp)
 
-	colormap = plt.cm.viridis
-	norm = colors.Normalize(vmax=3,clip=True)
-	sc = plt.scatter(rp_mags, night_to_nights/night_to_nights_theory_measured, c=bp_rp-median_ref_bp_rp, norm=norm, cmap=colormap)
-	plt.colorbar(sc, label=f'(Bp-Rp)-{median_ref_bp_rp:.2f}')
-	plt.tick_params(labelsize=12)
-	plt.xlabel('Rp', fontsize=14)
-	plt.ylabel('$\sigma_{N2N, measured}$/$\sigma_{N2N, theory}$', fontsize=14)
-	plt.yscale('log')
-	plt.grid(True, which='both', alpha=0.7)
-	plt.tight_layout()
+	# colormap = plt.cm.viridis
+	# norm = colors.Normalize(vmax=3,clip=True)
+	# sc = plt.scatter(rp_mags, night_to_nights/night_to_nights_theory_measured, c=bp_rp-median_ref_bp_rp, norm=norm, cmap=colormap)
+	# plt.colorbar(sc, label=f'(Bp-Rp)-{median_ref_bp_rp:.2f}')
+	# plt.tick_params(labelsize=12)
+	# plt.xlabel('Rp', fontsize=14)
+	# plt.ylabel('$\sigma_{N2N, measured}$/$\sigma_{N2N, theory}$', fontsize=14)
+	# plt.yscale('log')
+	# plt.grid(True, which='both', alpha=0.7)
+	# plt.tight_layout()
 	
 	# plt.figure()
 	# sc = plt.scatter(rp_mags, night_to_nights/night_to_nights_theory_measured, c=ap_rad)
