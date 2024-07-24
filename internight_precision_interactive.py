@@ -295,7 +295,7 @@ def main(raw_args=None):
 		with open(lcs[i], 'r') as f:
 			comment = f.readline()
 		# phot_ind = np.where(ap_sizes == ap_radii[i])[0][0]
-		source_ap_rad = int(comment.split('_')[-1].split('.')[0])
+		source_ap_rad = float(comment.split('_')[-1].split('.parquet')[0])
 
 		df = pd.read_csv(lcs[i], comment='#', dtype=np.float64)
 		source_id = lcs[i].split('_')[-2]

@@ -182,7 +182,9 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# v, l, h = sigmaclip(noise_ratios[~np.isnan(noise_ratios)], 2, 2)
 	# weights[np.where(noise_ratios[~np.isnan(noise_ratios)]>h)[0]] = 0
 
-	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=1).mask
+	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=1).mask 
+
+	# breakpoint()
 	weights[sc_mask] = 0 
 	# weights[np.where(noise_ratios>5)[0]] = 0
 	weights /= sum(weights)
@@ -700,8 +702,8 @@ def main(raw_args=None):
 	fwhm_y = np.zeros(n_ims, dtype='float16')
 	flux = np.zeros((n_dfs, n_ims, n_sources), dtype='float32')
 	flux_err = np.zeros_like(flux)
-	non_linear_flags = np.zeros_like(flux, dtype='int8')
-	saturated_flags = np.zeros_like(flux, dtype='int8')
+	non_linear_flags = np.zeros_like(flux, dtype='bool')
+	saturated_flags = np.zeros_like(flux, dtype='bool')
 	x = np.zeros((n_ims, n_sources), dtype='float32')
 	y = np.zeros_like(x)
 	sky = np.zeros_like(x)
@@ -722,7 +724,7 @@ def main(raw_args=None):
 	phot_files = sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0])) # sort on aperture size so everything is in order
 
 	n_dfs = len(phot_files)
-
+	breakpoint()
 	ancillary_tab = pq.read_table(ancillary_file, columns=ancillary_cols)
 
 	source_inds = np.arange(len(source_ids))

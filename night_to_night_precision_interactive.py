@@ -16,6 +16,7 @@ from matplotlib import colors
 from internight_precision_interactive import gaia_query
 from photutils.aperture import CircularAperture, aperture_photometry 
 from astropy.modeling.functional_models import Gaussian2D
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 def main(raw_args=None):
 
@@ -81,6 +82,90 @@ def main(raw_args=None):
 		ax3.set_xlim(x_pos[point]-50, x_pos[point]+50)
 		ax3.set_ylim(y_pos[point]-50, y_pos[point]+50)
 
+	def on_click_2(event):
+		global highlight_2
+		# print(event.inaxes)
+		ax_2 = event.inaxes
+		if ax_2 is not None:
+			label = axes_mapping_2.get(ax_2, 'Unknown axis')
+		else:
+			return
+
+		if label == 'ax1_2':
+			x_click = event.xdata
+			y_click = event.ydata
+			dists = ((x_pos - x_click)**2+(y_pos - y_click)**2)**0.5
+			point = np.nanargmin(dists)
+			print(point)
+			print(x_click)
+			print(y_click)
+		elif label == 'ax2_2':
+			return
+		else:
+			return
+		
+		print(f'Clicked on {source_ids[point]}, sigma_n2n = {night_to_nights[point]*1e6:.0f}')
+		if highlight_2:
+			ax1_2.lines[-1].remove()
+			highlight_2 = None
+
+		highlight_2 = ax1_2.plot(x_pos[point], y_pos[point], marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
+
+		# clear out the previous lc and plot the new one
+		ax2_2.cla()
+		ax2_2.errorbar(times_arr[point], flux_arr[point], flux_err_arr[point], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+		ax2_2.errorbar(bx_arr[point], by_arr[point], bye_arr[point], marker='o', color='k', ls='', zorder=3)
+		ax2_2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+		ax2_2.grid(alpha=0.5)
+		ax2_2.tick_params(labelsize=12)
+		ax2_2.set_xlabel('Time (BJD$_{TDB}$)', fontsize=14)
+		ax2_2.set_ylabel('Normalized Flux', fontsize=14)
+		ax2_2.set_title(source_ids[point], fontsize=14)
+		return 
+
+	def on_click_3(event):
+		global highlight_3 
+		# print(event.inaxes)
+		ax_3 = event.inaxes
+		if ax_3 is not None:
+			label = axes_mapping_3.get(ax_3, 'Unknown axis')
+		else:
+			return
+
+		if label == 'ax1_3':
+			x_click = event.xdata
+			y_click = event.ydata
+			dists = ((bp_rp - x_click)**2+(G - y_click)**2)**0.5
+			point = np.nanargmin(dists)
+			print(point)
+			print(x_click)
+			print(y_click)
+		elif label == 'ax2_3':
+			return
+		else:
+			return
+		
+		print(f'Clicked on {source_ids[point]}, sigma_n2n = {night_to_nights[point]*1e6:.0f}')
+		if highlight_3:
+			ax1_3.lines[-1].remove()
+			highlight_3 = None
+
+		highlight_3 = ax1_3.plot(bp_rp[point], G[point], marker='o', color='#FFAA33', mec='k', mew=1.5, ls='')
+
+
+
+		# clear out the previous lc and plot the new one
+		ax2_3.cla()
+		ax2_3.errorbar(times_arr[point], flux_arr[point], flux_err_arr[point], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+		ax2_3.errorbar(bx_arr[point], by_arr[point], bye_arr[point], marker='o', color='k', ls='', zorder=3)
+		ax2_3.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+		ax2_3.grid(alpha=0.5)
+		ax2_3.tick_params(labelsize=12)
+		ax2_3.set_xlabel('Time (BJD$_{TDB}$)', fontsize=14)
+		ax2_3.set_ylabel('Normalized Flux', fontsize=14)
+		ax2_3.set_title(source_ids[point], fontsize=14)
+		return 
+
 	# set some constants
 	PLATE_SCALE = 0.432 # " pix^-1
 	contamination_limit = 0.1 
@@ -103,7 +188,7 @@ def main(raw_args=None):
 		date_list = np.delete(date_list, [-1])
 
 	# read in weights csv
-	weights_df = pd.read_csv(f'/data/tierras/fields/{field}/sources/weights.csv')
+	weights_df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/weights.csv')
 	ref_ids = np.array(weights_df['Ref ID'])
 	weights_df = np.array(weights_df)
 
@@ -138,7 +223,7 @@ def main(raw_args=None):
 	source_image = fits.open(flattened_files[best_im_ind])[0].data
 
 	# get the global light curves that have been created for this field
-	lc_files = glob.glob(f'/data/tierras/fields/{field}/sources/lightcurves/**.csv')
+	lc_files = glob.glob(f'/data/tierras/fields/{field}/sources/lightcurves/**global_lc.csv')
 	times = np.array(pd.read_csv(lc_files[0], comment='#')['BJD TDB'])
 	times -= times[0] 
 
@@ -356,10 +441,9 @@ def main(raw_args=None):
 			# 	comment.append(file.readline())
 			ap_size = ap_rad[i]
 
-			# weight = weights_df[ref_ind, ap_size-4] #TODO: THIS WILL BREAK WITH MORE APS
-
-			weight = weights_df[ref_ind, 1] #TODO: this is not right
-			if weight != 0:
+			# check if this star was given a weight in *any* of the photometry files.
+			# if so, count it as a ref star in the plot
+			if sum(weights_df[ref_ind][1:]) > 0:
 				weighted_ref_rp.append(source_rp)
 				weighted_ref_n2n.append(n2n)
 				weighted_ref_bp_rp.append(source_bp_rp)
@@ -392,11 +476,11 @@ def main(raw_args=None):
 	# for i in range(100):
 		if i == 0:
 			ax1.plot(rp_mags[i], night_to_nights[i], alpha=0.3, label='Measured', gid=source_ids[i], color='tab:blue', marker='.', ls='')
-			#ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', label='Theory (unc. / sqrt(N))', marker='.', ls='', gid=source_ids[i])
+			# ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', label='Theory (unc. / sqrt(N))', marker='.', ls='', gid=source_ids[i])
 			ax1.plot(rp_mags[i], night_to_nights_theory_measured[i], alpha=0.3, color='r', label='Theory (measured $\sigma$ / sqrt(N))', marker='.', ls='', gid=source_ids[i])
 		else:
 			ax1.plot(rp_mags[i], night_to_nights[i], alpha=0.3, gid=source_ids[i], color='tab:blue', marker='.', ls='')
-			#ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', marker='.', ls='', gid=source_ids[i])	
+			# ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', marker='.', ls='', gid=source_ids[i])	
 			ax1.plot(rp_mags[i], night_to_nights_theory_measured[i], alpha=0.3, color='r', marker='.', ls='', gid=source_ids[i])
 	
 	# gaia_var_inds = np.where(source_df['phot_variable_flag'] == 'VARIABLE')[0]
@@ -431,30 +515,66 @@ def main(raw_args=None):
 	print(f'Median observed/theory (calculated uncertainties): {np.nanmedian(night_to_nights/night_to_nights_theory_calculated):.1f}')
 	print(f'Median observed/theory (measured scatter): {np.nanmedian(night_to_nights/night_to_nights_theory_measured):.1f}')
 
-	# plt.figure()
 
-	# median_ref_bp_rp = np.nanmedian(weighted_ref_bp_rp)
+	x = np.array(x_pos)
+	y = np.array(y_pos)
+	bp_rp = np.array(bp_rp)
+	G = np.array(G)
 
-	# colormap = plt.cm.viridis
-	# norm = colors.Normalize(vmax=3,clip=True)
-	# sc = plt.scatter(rp_mags, night_to_nights/night_to_nights_theory_measured, c=bp_rp-median_ref_bp_rp, norm=norm, cmap=colormap)
-	# plt.colorbar(sc, label=f'(Bp-Rp)-{median_ref_bp_rp:.2f}')
-	# plt.tick_params(labelsize=12)
-	# plt.xlabel('Rp', fontsize=14)
-	# plt.ylabel('$\sigma_{N2N, measured}$/$\sigma_{N2N, theory}$', fontsize=14)
-	# plt.yscale('log')
-	# plt.grid(True, which='both', alpha=0.7)
-	# plt.tight_layout()
-	
-	# plt.figure()
-	# sc = plt.scatter(rp_mags, night_to_nights/night_to_nights_theory_measured, c=ap_rad)
-	# plt.yscale('log')
+	ratios = night_to_nights / night_to_nights_theory_measured
+	perc = np.percentile(ratios, 10) # get the 10% best ratios for plotting purposes
+	best_ratios = np.where(ratios< perc)[0]
 
+	# plot chip positions colored by ratios
 
-	if field == 'TIC362144730':
-		output_dict = {'source_id':source_ids, 'night_to_nights':night_to_nights, 'night_to_nights_theory':night_to_nights_theory_measured}
-		output_df = pd.DataFrame(output_dict)
-		output_df.to_csv('/home/ptamburo/tierras/pat_scripts/TIC362144730_n2n.csv', index=0)
+	fig2 = plt.figure(figsize=(12,10))
+	gs2 = GridSpec(2, 1, height_ratios=[1.5,1])
+	ax1_2 = fig2.add_subplot(gs2[0])
+	ax2_2 = fig2.add_subplot(gs2[1])
+	axes_mapping_2 = {ax1_2: 'ax1_2', 'ax2_2': ax2_2}
+	global highlight_2
+	highlight_2 = None
+	fig2.canvas.mpl_connect('button_press_event', on_click_2)
+
+	sc = ax1_2.scatter(x,y, c=np.log10(ratios), vmin=0, vmax=1, gid=source_ids)
+	# cbar = plt.colorbar(sc, label='log$_{10}$(measured/theory)')
+	ax1_2.scatter(x[best_ratios], y[best_ratios], c=np.log10(ratios[best_ratios]), vmin=0, vmax=1, edgecolors='m', linewidth=1.5) # plot the best 10% on top
+	# cbar.ax.plot([0,1], [np.log10(perc),np.log10(perc)], lw=3, color='m')
+	ax2_2.set_xlabel('Time (BJD$_{TDB}$)', fontsize=14)
+	ax2_2.set_ylabel('Normalized Flux', fontsize=14)
+	ax2_2.set_title('Init.', fontsize=14)
+	plt.tight_layout()
+
+	# plot CMD colored by ratios 
+
+	fig3 = plt.figure(figsize=(10,12))
+	gs3 = GridSpec(2, 1, height_ratios=[1.5,1])
+	ax1_3 = fig3.add_subplot(gs3[0])
+	ax2_3 = fig3.add_subplot(gs3[1])
+
+	axes_mapping_3 = {ax1_3: 'ax1_3', ax2_3: 'ax2_3'}
+
+	global highlight_3
+	highlight_3 = None
+	fig3.canvas.mpl_connect('button_press_event', on_click_3)
+
+	sc = ax1_3.scatter(bp_rp, G, c=np.log10(ratios), vmin=0, vmax=1)
+	divider = make_axes_locatable(ax1_3)
+	cax = divider.append_axes('right', size='5%', pad=0.05)
+	cbar = fig3.colorbar(sc, cax=cax, label='log$_{10}$(measured/theory)')
+
+	ax1_3.invert_yaxis()
+	ax1_3.set_xlabel('Bp-Rp', fontsize=14)
+	ax1_3.set_ylabel('G', fontsize=14)
+	ax1_3.tick_params(labelsize=12)
+	ax1_3.scatter(bp_rp[best_ratios], G[best_ratios], c=np.log10(ratios[best_ratios]), vmin=0, vmax=1, edgecolors='m', linewidth=1.5) # plot the best 10% on top
+	cbar.ax.plot([0,1], [np.log10(perc),np.log10(perc)], lw=3, color='m')
+
+	ax2_3.set_xlabel('Time (BJD$_{TDB}$)', fontsize=14)
+	ax2_3.set_ylabel('Normalized Flux', fontsize=14)
+	ax2_3.set_title('Init.', fontsize=14)
+	plt.tight_layout()
+
 	breakpoint()
 	
 

@@ -178,7 +178,7 @@ def periodogram_plot(x, y, y_err, freq, power, target, field, color_by_time=Fals
 
     variability_model = sine_model(phased_x, params[0], params[1], params[2])
     chi_2_var = np.nansum((phased_y-variability_model)**2/(phased_y_err**2))
-    bic_var = chi_2_var + len(params)*np.log(len(phased_y))
+    bic_var = chi_2_var + (len(params)+1)*np.log(len(phased_y))
     flat_line_model = np.nanmedian(phased_y)
     chi_2_flat = np.nansum((phased_y-flat_line_model)**2/(phased_y_err**2))
     bic_flat = chi_2_flat + np.log(len(phased_y))
@@ -188,17 +188,17 @@ def periodogram_plot(x, y, y_err, freq, power, target, field, color_by_time=Fals
     plt.tight_layout()
     # if target == 'Gaia DR3 4146924622363117056':
     #     breakpoint()
+    delta_bic = bic_flat-bic_var
 
-    if bic_flat - bic_var < 6:
-        breakpoint()
-
-    if save and bic_flat-bic_var > 6:
+    if save:
         output_dir = f'/data/tierras/fields/{field}/sources/plots/ls_periodograms'
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)
             set_tierras_permissions(output_dir)
-        plt.savefig(output_dir+f'/{target}_ls_periodogram.png', dpi=200)
-        set_tierras_permissions(output_dir+f'/{target}_ls_periodogram.png')
+        plt.savefig(output_dir+f'/{delta_bic:.2f}_{target}_ls_periodogram.png', dpi=200)
+        set_tierras_permissions(output_dir+f'/{delta_bic:.2f}_{target}_ls_periodogram.png')
+    if delta_bic < 6:
+        print('Flat model - variability model BIC < 6!')
     plt.close()
     return 
 
@@ -237,7 +237,6 @@ def main(raw_args=None):
         error_inflation = 0.0001*np.exp((source_rp-10)/1.4)+0.0004
         # y_err = np.sqrt(y_err**2 + error_inflation**2) # add in quadrature? 
         y_err += error_inflation
-        # y_err += 100
 
         x, y, y_err, freq, power = periodogram(x, y, y_err, target, field, sc=True)
 
