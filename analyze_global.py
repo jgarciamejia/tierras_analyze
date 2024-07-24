@@ -22,6 +22,8 @@ import csv
 import pyarrow as pa 
 import pyarrow.parquet as pq 
 from astropy.stats import sigma_clip
+from photutils.aperture import CircularAperture, aperture_photometry 
+from astropy.modeling.functional_models import Gaussian2D
 
 def identify_target_gaia_id(target, sources=None, x_pix=None, y_pix=None):
 	
@@ -83,6 +85,7 @@ def main(raw_args=None):
 	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
 	ap.add_argument("-minimum_night_duration", required=False, default=1, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
 	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
+	ap.add_argument("-cut_contaminated", required=False, default=True, help="Whether or not to cut sources based on contamination metric.")
 
 	args = ap.parse_args(raw_args)
 
@@ -100,6 +103,7 @@ def main(raw_args=None):
 		target = field 
 	else:
 		target = args.target
+	cut_contaminated = t_or_f(args.cut_contaminated)
 
 	# identify dates on which this field was observed 
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
@@ -122,7 +126,7 @@ def main(raw_args=None):
 	# skip some nights of processing for TIC362144730
 	# TODO: automate this process 
 	if field == 'TIC362144730':
-		bad_dates = ['20240519', '20240520', '20240531', '20240607', '20240609', '20240610', '20240706', '20240707', '20240708']
+		bad_dates = ['20240519', '20240520', '20240526', '20240528', '20240531', '20240605', '20240607', '20240609', '20240610', '20240706', '20240707', '20240708', '20240710', '20240713', '20240716', '20240717']
 		dates_to_remove = []
 		for i in range(len(bad_dates)):
 			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
@@ -181,8 +185,86 @@ def main(raw_args=None):
 		if len(phot_files) != 0:
 			n_ims += len(pq.read_table(phot_files[0]))
 
-			
+	try:
+		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
+		with open(gaia_id_file, 'r') as f:
+			tierras_target_id = f.readline()
+		tierras_target_id = int(tierras_target_id.split(' ')[-1])
+		# tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix)
+	except:
+		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
+	
+	if cut_contaminated:
+		contaminant_grid_size = 50 
+		PLATE_SCALE = 0.432 
+		contamination_limit = 0.1
+		fwhm_x = 3
+		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
+		seeing_fwhm = np.nanmedian(fwhm_x) / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
+		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
+		contaminations = []
+		inds_to_keep = []
+		print('Estimating contamination of field sources...')
+		for i in range(len(common_source_ids)):
+			print(f'Doing {common_source_ids[i]} ({i+1} of {len(common_source_ids)})')
+			ind = np.where(source_dfs[0]['source_id'] == common_source_ids[i])[0][0]
+			source_x = source_dfs[0]['X pix'][ind]
+			source_y = source_dfs[0]['Y pix'][ind]
+			source_rp = source_dfs[0]['phot_rp_mean_mag'][ind]
+			distances = np.array(np.sqrt((source_x-source_dfs[0]['X pix'])**2+(source_y-source_dfs[0]['Y pix'])**2))
+			nearby_inds = np.where((distances <= contaminant_grid_size) & (distances != 0))[0]
+			if len(nearby_inds) > 0:
+				nearby_rp = np.array(source_dfs[0]['phot_rp_mean_mag'][nearby_inds])
+				nearby_x = np.array(source_dfs[0]['X pix'][nearby_inds] - source_x)
+				nearby_y = np.array(source_dfs[0]['Y pix'][nearby_inds] - source_y)
 
+				# sometimes the rp mag is nan, remove these entries
+				use_inds = np.where(~np.isnan(nearby_rp))[0]
+				nearby_rp = nearby_rp[use_inds]
+				nearby_x = nearby_x[use_inds]
+				nearby_y = nearby_y[use_inds]
+
+				# enforce that a nearby source cannot have the same rp magnitude as the source in question, that's almost certainly a duplicate
+				use_inds = np.where(nearby_rp != source_rp)
+				nearby_rp = nearby_rp[use_inds]
+				nearby_x = nearby_x[use_inds]
+				nearby_y = nearby_y[use_inds]
+
+				# model the source in question as a 2D gaussian
+				source_model = Gaussian2D(x_mean=0, y_mean=0, amplitude=1/(2*np.pi*seeing_sigma**2), x_stddev=seeing_sigma, y_stddev=seeing_sigma)
+				sim_img = source_model(xx, yy)
+
+				# add in gaussian models for the nearby sources
+				for jj in range(len(nearby_rp)):
+					flux = 10**(-(nearby_rp[jj]-source_rp)/2.5)
+					contaminant_model = Gaussian2D(x_mean=nearby_x[jj], y_mean=nearby_y[jj], amplitude=flux/(2*np.pi*seeing_sigma**2), x_stddev=seeing_sigma, y_stddev=seeing_sigma)
+					contaminant = contaminant_model(xx,yy)
+					sim_img += contaminant	
+
+				# estimate contamination by doing aperture photometry on the simulated image
+				# if the measured flux exceeds 1 by a chosen threshold, record the source's index so it can be removed
+				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=10)
+				phot_table = aperture_photometry(sim_img, ap)
+				contamination = phot_table['aperture_sum'][0] - 1
+				if (contamination < contamination_limit) or (common_source_ids[i] == tierras_target_id):
+					contaminations.append(contamination) 
+					inds_to_keep.append(i)
+			else:
+				inds_to_keep.append(i)
+				contaminations.append([0])
+		
+		print(f'Retaining {len(inds_to_keep)} sources after contamination checks.')
+		common_source_ids = common_source_ids[inds_to_keep]
+		n_sources = len(common_source_ids)	
+
+		# regenerate the index mapping between the source dfs and the photometry source names
+		source_inds = []
+		for i in range(len(source_dfs)):
+			source_inds.append([])
+			for j in range(len(common_source_ids)):
+				source_inds[i].extend([np.where(source_dfs[i]['source_id'] == common_source_ids[j])[0][0]])
+
+	breakpoint()
 	times = np.zeros(n_ims, dtype='float64')
 	airmasses = np.zeros(n_ims, dtype='float16')
 	exposure_times = np.zeros(n_ims, dtype='float16')
@@ -280,7 +362,7 @@ def main(raw_args=None):
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
 	if same: 
 
-		fwhm_inds = np.where(fwhm_x > 2.8)[0]
+		fwhm_inds = np.where(fwhm_x > 2.5)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
 		airmass_inds = np.where(airmasses > 2.0)[0]
 		sky_inds = np.where(median_sky > 5)[0]
@@ -345,14 +427,7 @@ def main(raw_args=None):
 	time_deltas = [i[-1]-i[0] for i in times_list]
 	x_range = np.nanmax(time_deltas)
 
-	try:
-		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
-		with open(gaia_id_file, 'r') as f:
-			tierras_target_id = f.readline()
-		tierras_target_id = int(tierras_target_id.split(' ')[-1])
-		# tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix)
-	except:
-		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
+	
 
 	# # NOTE: Uncomment these lines if you want to do the weighting on nightly medians only. 
 	# binned_times = np.zeros(len(night_inds_list))
@@ -371,7 +446,7 @@ def main(raw_args=None):
 	# 		binned_flux_err[j,i,:] = np.nanmean(flux_err[j,night_inds_list[i]],axis=0)/np.sqrt(len(night_inds_list[i]))
 	# 		binned_nl_flags[j,i,np.sum(non_linear_flags[j,night_inds_list[i]], axis=0)>1] = 1
 
-	ppb = 5 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
+	ppb = 10 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
 	n_bins = int(np.ceil(n_ims/ppb))
 	bin_inds = []
 	for i in range(n_bins):
@@ -400,7 +475,7 @@ def main(raw_args=None):
 	avg_mearth_times = np.zeros(n_sources)
 
 	# choose a set of references and generate weights
-	max_refs = 1000
+	max_refs = 2000
 	if len(common_source_ids) > max_refs:
 		ref_gaia_ids = common_source_ids[0:max_refs]
 		ref_inds = np.arange(max_refs)
@@ -418,17 +493,26 @@ def main(raw_args=None):
 		weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
 		weights_arr[:, i] = weights
 
-	# save a csv with the weights 
+	# create a 'lightcurves' directory for output
+	output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/')
+	if not os.path.exists(output_path.parent.parent):
+		os.mkdir(output_path.parent.parent)
+		set_tierras_permissions(output_path.parent.parent)
+	if not os.path.exists(output_path.parent):
+		os.mkdir(output_path.parent)
+		set_tierras_permissions(output_path.parent)
+	if not os.path.exists(output_path):
+		os.mkdir(output_path)
+		set_tierras_permissions(output_path)
+
+	# save a csv with the weights to the light curve directory 
 	weights_dict = {'Ref ID':common_source_ids[ref_inds]}
 	for i in range(n_dfs):
 		ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.')[0]
 		weights_dict[ap_size] = weights_arr[:,i]
 	weights_df = pd.DataFrame(weights_dict)
-	if not os.path.exists(f'/data/tierras/fields/{field}/sources'):
-		os.mkdir(f'/data/tierras/fields/{field}/sources')
-		set_tierras_permissions(f'/data/tierras/fields/{field}/sources')
-	weights_df.to_csv(f'/data/tierras/fields/{field}/sources/weights.csv', index=0)
-	set_tierras_permissions(f'/data/tierras/fields/{field}/sources/weights.csv')
+	weights_df.to_csv(f'{output_path}/weights.csv', index=0)
+	set_tierras_permissions(f'{output_path}/weights.csv')
 	
 	# reevaluate bin_inds to be the indices on each night. The optimal photometric aperture will be chosen based on which one minimizes sigma_n2n
 	bin_inds = []
@@ -773,18 +857,8 @@ def main(raw_args=None):
 					os.system('echo | mutt {} -s {} -a {}'.format(emails,subject,append))
 
 			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Airmass':airmasses}
-			output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/')
-			if not os.path.exists(output_path.parent.parent):
-				os.mkdir(output_path.parent.parent)
-				set_tierras_permissions(output_path.parent.parent)
-			if not os.path.exists(output_path.parent):
-				os.mkdir(output_path.parent)
-				set_tierras_permissions(output_path.parent)
-			if not os.path.exists(output_path):
-				os.mkdir(output_path)
-				set_tierras_permissions(output_path)
-
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Airmass':airmasses, 'FWHM':fwhm_x}
+			
 			if ap_rad is not None:
 				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
 			else:
