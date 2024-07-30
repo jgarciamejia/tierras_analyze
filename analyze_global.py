@@ -24,6 +24,14 @@ import pyarrow.parquet as pq
 from astropy.stats import sigma_clip
 from photutils.aperture import CircularAperture, aperture_photometry 
 from astropy.modeling.functional_models import Gaussian2D
+from astropy.wcs import WCS 
+from astropy.io import fits
+from astroquery.gaia import Gaia
+Gaia.MAIN_GAIA_TABLE = 'gaiadr3.gaia_source'
+from astropy.time import Time
+from astropy.coordinates import SkyCoord
+import astropy.units as u 
+from astropy.visualization import simple_norm 
 
 def identify_target_gaia_id(target, sources=None, x_pix=None, y_pix=None):
 	
@@ -105,10 +113,12 @@ def main(raw_args=None):
 		target = args.target
 	cut_contaminated = t_or_f(args.cut_contaminated)
 
+	fpath = '/data/tierras/flattened/'
+
 	# identify dates on which this field was observed 
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
 	date_list = np.array(sorted(date_list, key=lambda x:int(x.split('/')[4]))) # sort on date so that everything is in order
-	
+
 	# if a set of use_nights has been specified, cut the date list to match 
 	if args.use_nights is not None:
 		use_nights = args.use_nights.replace(' ','').split(',')
@@ -143,6 +153,32 @@ def main(raw_args=None):
 			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
 		dates = np.delete(dates, dates_to_remove)
 		date_list = np.delete(date_list, dates_to_remove)		
+
+	# determine the average field pointing on the first night so we can query for *all* sources
+	if cut_contaminated:
+		PLATE_SCALE = 0.432
+		ras = []
+		decs = []
+		
+		date = dates[0]
+		ffname = date_list[0].split('/')[-1]
+		files = glob(fpath+f'{date}/{field}/{ffname}/*_red.fit')
+		for i in range(len(files)):
+			wcs = WCS(fits.open(files[i])[0].header)
+			central_pos = wcs.pixel_to_world(2048, 1024)
+			ras.append(central_pos.ra.value)
+			decs.append(central_pos.dec.value)
+		
+		im_shape = np.shape(fits.open(files[0])[0].data)
+		ras, _, _ = sigmaclip(ras)
+		decs, _, _ = sigmaclip(decs)
+		mean_ra = np.mean(ras)
+		mean_dec = np.mean(decs)
+		coord = SkyCoord(mean_ra*u.deg, mean_dec*u.deg)
+		# calculate the width and height of the query; add on 1 arcminute for tolerance
+		width = u.Quantity(PLATE_SCALE*im_shape[0],u.arcsec)/np.cos(np.radians(mean_dec)) + u.Quantity(1*u.arcmin)
+		height = u.Quantity(PLATE_SCALE*im_shape[1],u.arcsec) + u.Quantity(1*u.arcmin)
+		
 
 	# read in the source df's from each night 
 	source_dfs = []
@@ -198,8 +234,9 @@ def main(raw_args=None):
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
 	if cut_contaminated:
-		contaminant_grid_size = 50 
-		PLATE_SCALE = 0.432 
+		contaminant_grid_size = 50 # pix 
+		PLATE_SCALE = 0.432 # arcsec pix^-1
+		grid_radius_arcsec = np.sqrt(2*(contaminant_grid_size/2)**2) * PLATE_SCALE # arcsec
 		contamination_limit = 0.1
 		fwhm_x = 2.5
 		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
@@ -207,19 +244,51 @@ def main(raw_args=None):
 		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
 		contaminations = []
 		inds_to_keep = []
+
+		# query Gaia for *all* sources in the field
+		job = Gaia.launch_job_async("""
+									SELECT source_id, ra, dec, ref_epoch, pmra, pmra_error, pmdec, pmdec_error, parallax, phot_rp_mean_mag
+							 		FROM gaiadr3.gaia_source as gaia
+									WHERE gaia.ra BETWEEN {} AND {} AND
+											gaia.dec BETWEEN {} AND {} AND 
+											gaia.phot_rp_mean_mag IS NOT NULL AND 
+							  				gaia.ra IS NOT NULL AND 
+							  				gaia.dec IS NOT NULL 
+									ORDER BY phot_rp_mean_mag ASC
+								""".format(coord.ra.value - width.to(u.deg).value/2, coord.ra.value + width.to(u.deg).value/2, coord.dec.value-height.to(u.deg).value/2, coord.dec.value+height.to(u.deg).value/2)
+								)
+		res = job.get_results()
+		# cut to entries without masked pmra values; otherwise the crossmatch will break
+		problem_inds = np.where(res['pmra'].mask)[0]
+
+		# set the pmra, pmdec, and parallax of those indices to 0
+		res['pmra'][problem_inds] = 0
+		res['pmdec'][problem_inds] = 0
+		res['parallax'][problem_inds] = 0
+		tierras_epoch = Time(fits.open(files[0])[0].header['TELDATE'],format='decimalyear')
+		res['SOURCE_ID'].name = 'source_id' # why does this get returned in all caps? 
+		gaia_coords = SkyCoord(ra=res['ra'], dec=res['dec'], pm_ra_cosdec=res['pmra'], pm_dec=res['pmdec'], obstime=Time('2016',format='decimalyear'))
+		gaia_coords_tierras_epoch = gaia_coords.apply_space_motion(tierras_epoch)
+		# gaia_coords_ra = 
+
 		print('Estimating contamination of field sources...')
 		for i in range(len(common_source_ids)):
 			print(f'Doing {common_source_ids[i]} ({i+1} of {len(common_source_ids)})')
 			ind = np.where(source_dfs[0]['source_id'] == common_source_ids[i])[0][0]
-			source_x = source_dfs[0]['X pix'][ind]
-			source_y = source_dfs[0]['Y pix'][ind]
+			source_ra = source_dfs[0]['ra'][ind]
+			source_dec = source_dfs[0]['dec'][ind]
+			# source_x = source_dfs[0]['X pix'][ind]
+			# source_y = source_dfs[0]['Y pix'][ind]
 			source_rp = source_dfs[0]['phot_rp_mean_mag'][ind]
-			distances = np.array(np.sqrt((source_x-source_dfs[0]['X pix'])**2+(source_y-source_dfs[0]['Y pix'])**2))
-			nearby_inds = np.where((distances <= contaminant_grid_size) & (distances != 0))[0]
+			# distances = np.array(np.sqrt((source_x-source_dfs[0]['X pix'])**2+(source_y-source_dfs[0]['Y pix'])**2))
+			distances = np.array(np.sqrt((source_ra-gaia_coords.ra.value)**2+(source_dec-gaia_coords.dec.value)**2))*3600
+			nearby_inds = np.where((distances <= grid_radius_arcsec) & (distances != 0))[0]
 			if len(nearby_inds) > 0:
-				nearby_rp = np.array(source_dfs[0]['phot_rp_mean_mag'][nearby_inds])
-				nearby_x = np.array(source_dfs[0]['X pix'][nearby_inds] - source_x)
-				nearby_y = np.array(source_dfs[0]['Y pix'][nearby_inds] - source_y)
+				nearby_rp = np.array(res['phot_rp_mean_mag'][nearby_inds])
+				# nearby_x = np.array(source_dfs[0]['X pix'][nearby_inds] - source_x)
+				# nearby_y = np.array(source_dfs[0]['Y pix'][nearby_inds] - source_y)
+				nearby_y = np.array(source_ra - res['ra'][nearby_inds])*3600/PLATE_SCALE
+				nearby_x = np.array(res['dec'][nearby_inds] - source_dec)*3600/PLATE_SCALE
 
 				# sometimes the rp mag is nan, remove these entries
 				use_inds = np.where(~np.isnan(nearby_rp))[0]
@@ -249,6 +318,10 @@ def main(raw_args=None):
 				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=10)
 				phot_table = aperture_photometry(sim_img, ap)
 				contamination = phot_table['aperture_sum'][0] - 1
+				# if i == 3:
+				# 	plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=80))
+				# 	breakpoint() 
+
 				if (contamination < contamination_limit) or (common_source_ids[i] == tierras_target_id):
 					contaminations.append(contamination) 
 					inds_to_keep.append(i)
@@ -367,7 +440,7 @@ def main(raw_args=None):
 
 		fwhm_inds = np.where(fwhm_x > 2.5)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
-		airmass_inds = np.where(airmasses > 1.5)[0]
+		airmass_inds = np.where(airmasses > 1.7)[0]
 		sky_inds = np.where(median_sky > 5)[0]
 		# humidity_inds = np.where(humidity > 50)[0]
 		flux_inds = np.where(median_flux < 0.5)[0]
@@ -478,7 +551,8 @@ def main(raw_args=None):
 	avg_mearth_times = np.zeros(n_sources)
 
 	# choose a set of references and generate weights
-	max_refs = 2000
+	# max_refs = 2000
+	max_refs = len(common_source_ids)
 	if len(common_source_ids) > max_refs:
 		ref_gaia_ids = common_source_ids[0:max_refs]
 		ref_inds = np.arange(max_refs)

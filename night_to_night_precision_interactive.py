@@ -174,7 +174,7 @@ def main(raw_args=None):
 	ap = argparse.ArgumentParser()
 	ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of flat directory")
-	ap.add_argument("-cut_contaminated", required=False, default=True, help="whether or not to perform contamination analysis")
+	ap.add_argument("-cut_contaminated", required=False, default=False, help="whether or not to perform contamination analysis")
 	args = ap.parse_args()
 	field = args.field 
 	ffname = args.ffname
@@ -443,7 +443,7 @@ def main(raw_args=None):
 
 			# check if this star was given a weight in *any* of the photometry files.
 			# if so, count it as a ref star in the plot
-			if sum(weights_df[ref_ind][1:]) > 0:
+			if np.nansum(weights_df[ref_ind][1:]) > 0:
 				weighted_ref_rp.append(source_rp)
 				weighted_ref_n2n.append(n2n)
 				weighted_ref_bp_rp.append(source_bp_rp)
@@ -476,12 +476,12 @@ def main(raw_args=None):
 	# for i in range(100):
 		if i == 0:
 			ax1.plot(rp_mags[i], night_to_nights[i], alpha=0.3, label='Measured', gid=source_ids[i], color='tab:blue', marker='.', ls='')
-			# ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', label='Theory (unc. / sqrt(N))', marker='.', ls='', gid=source_ids[i])
-			ax1.plot(rp_mags[i], night_to_nights_theory_measured[i], alpha=0.3, color='r', label='Theory (measured $\sigma$ / sqrt(N))', marker='.', ls='', gid=source_ids[i])
+			ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', label='Theory (unc. / sqrt(N))', marker='.', ls='', gid=source_ids[i])
+			# ax1.plot(rp_mags[i], night_to_nights_theory_measured[i], alpha=0.3, color='r', label='Theory (measured $\sigma$ / sqrt(N))', marker='.', ls='', gid=source_ids[i])
 		else:
 			ax1.plot(rp_mags[i], night_to_nights[i], alpha=0.3, gid=source_ids[i], color='tab:blue', marker='.', ls='')
-			# ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', marker='.', ls='', gid=source_ids[i])	
-			ax1.plot(rp_mags[i], night_to_nights_theory_measured[i], alpha=0.3, color='r', marker='.', ls='', gid=source_ids[i])
+			ax1.plot(rp_mags[i], night_to_nights_theory_calculated[i], alpha=0.3, color='k', marker='.', ls='', gid=source_ids[i])	
+			# ax1.plot(rp_mags[i], night_to_nights_theory_measured[i], alpha=0.3, color='r', marker='.', ls='', gid=source_ids[i])
 	
 	# gaia_var_inds = np.where(source_df['phot_variable_flag'] == 'VARIABLE')[0]
 	# ax1.plot(rp_mags[gaia_var_inds], night_to_nights[gaia_var_inds], marker='x', zorder=1, label='Gaia variable', color='m', ls='', mew=1.5, ms=6, alpha=1)
