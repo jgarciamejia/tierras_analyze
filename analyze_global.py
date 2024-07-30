@@ -133,6 +133,9 @@ def main(raw_args=None):
 		dates = np.delete(dates, dates_to_remove)
 		date_list = np.delete(date_list, dates_to_remove)		
 
+	# dates = dates[0:2]
+	# date_list = date_list[0:2]
+
 	if field == 'LHS2919':
 		bad_dates = ['20240530', '20240531', '20240601', '20240602']
 		dates_to_remove = []
@@ -198,7 +201,7 @@ def main(raw_args=None):
 		contaminant_grid_size = 50 
 		PLATE_SCALE = 0.432 
 		contamination_limit = 0.1
-		fwhm_x = 3
+		fwhm_x = 2.5
 		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
 		seeing_fwhm = np.nanmedian(fwhm_x) / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
 		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
@@ -364,7 +367,7 @@ def main(raw_args=None):
 
 		fwhm_inds = np.where(fwhm_x > 2.5)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
-		airmass_inds = np.where(airmasses > 2.0)[0]
+		airmass_inds = np.where(airmasses > 1.5)[0]
 		sky_inds = np.where(median_sky > 5)[0]
 		# humidity_inds = np.where(humidity > 50)[0]
 		flux_inds = np.where(median_flux < 0.5)[0]
@@ -508,7 +511,7 @@ def main(raw_args=None):
 	# save a csv with the weights to the light curve directory 
 	weights_dict = {'Ref ID':common_source_ids[ref_inds]}
 	for i in range(n_dfs):
-		ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.')[0]
+		ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.parquet')[0]
 		weights_dict[ap_size] = weights_arr[:,i]
 	weights_df = pd.DataFrame(weights_dict)
 	weights_df.to_csv(f'{output_path}/weights.csv', index=0)
@@ -525,7 +528,7 @@ def main(raw_args=None):
 		if common_source_ids[tt] == tierras_target_id:
 			target = field
 			target_gaia_id = tierras_target_id
-			plot = True	
+			plot = False	
 		else:
 			target = 'Gaia DR3 '+str(common_source_ids[tt])
 			target_gaia_id = identify_target_gaia_id(target)
@@ -558,6 +561,10 @@ def main(raw_args=None):
 			else:
 				weights = copy.deepcopy(weights_arr[:,i])
 
+			# cut to weights that are not 0 for efficiency (also adjust ref_inds to reflect this)	
+			ref_inds_loop = ref_inds[np.where(weights != 0)[0]]
+			weights = weights[ref_inds_loop]
+
 			# mearth_style_times[i] = time.time()-tmearth
 				
 			mask = np.zeros(len(flux[i][:,tt]), dtype='int') 
@@ -567,8 +574,8 @@ def main(raw_args=None):
 				break
 
 			# use the weights calculated in mearth_style to create the ALC 
-			alc = np.matmul(flux[i][:,ref_inds], weights)
-			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds]**2, weights**2))
+			alc = np.matmul(flux[i][:,ref_inds_loop], weights)
+			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds_loop]**2, weights**2))
 
 			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
 			target_flux = copy.deepcopy(flux[i][:,tt])
@@ -619,15 +626,15 @@ def main(raw_args=None):
 
 		if best_corr_flux is not None:
 			
-			v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
-			use_inds = np.where((best_corr_flux >= l) & (best_corr_flux <= h))
+			# v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
+			# use_inds = np.where((best_corr_flux >= l) & (best_corr_flux <= h))
 			
-			bins, std, theo = allen_deviation(times[use_inds], best_corr_flux[use_inds], best_corr_flux_err[use_inds])
+			# bins, std, theo = allen_deviation(times[use_inds], best_corr_flux[use_inds], best_corr_flux_err[use_inds])
 
-			med_std_over_theo = np.nanmedian(std/theo)
-			if med_std_over_theo > 10:
-				print('Possible variable!')
-				plot = False
+			# med_std_over_theo = np.nanmedian(std/theo)
+			# if med_std_over_theo > 10:
+			# 	print('Possible variable!')
+			# 	plot = False
 
 
 			# do a plot if this is the tierras target 
