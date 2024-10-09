@@ -208,18 +208,20 @@ def main(raw_args=None):
 	bin_mins = 20 # size of bins in minutes for the binned panel
 	contamination_limit = 0.1 
 	contaminant_grid_size = 50
+	grid_radius_arcsec = np.sqrt(2*(contaminant_grid_size/2)**2) * PLATE_SCALE # arcsec
 
 	ap = argparse.ArgumentParser()
 	ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
 	ap.add_argument("-date", required=True, help="Calendar date of observations.")
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of flat directory")
 	ap.add_argument("-cut_contaminated", required=False, default=True, help="whether or not to perform contamination analysis")
+	ap.add_argument("-force_ap_rad", required=False, default=0, type=float, help="If not zero, indicates the aperture size that will be used for all source photometry.")
 	args = ap.parse_args()
 	date = args.date
 	field = args.field 
 	ffname = args.ffname
 	cut_contaminated = t_or_f(args.cut_contaminated)
-
+	force_ap_rad = args.force_ap_rad
 
 	# read source df so we can access Rp magnitudes and pixel positions
 	sources = pd.read_csv(f'/data/tierras/photometry/{date}/{field}/{ffname}/{date}_{field}_sources.csv')
@@ -234,7 +236,7 @@ def main(raw_args=None):
 	phot_dfs = []
 	ap_sizes = []
 	for i in range(len(phot_files)):
-		ap_sizes.append(int(phot_files[i].split('/')[-1].split('_')[-1].split('.')[0]))
+		ap_sizes.append(float(phot_files[i].split('/')[-1].split('_')[-1].split('.parquet')[0]))
 		phot_dfs.append(pd.read_parquet(phot_files[i]))
 	ap_sizes = np.array(ap_sizes)
 
@@ -282,7 +284,7 @@ def main(raw_args=None):
 		# we don't perform photometry on *every* source in the field, so to get an accurate estimate of the contamination for each source, we need to query gaia for all sources (i.e. with no Rp mag limit) so that their fluxes can be modeled
 		all_field_sources = gaia_query(images)
 		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
-		seeing_fwhm = np.nanmedian(ancillary_data['FWHM X']) / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
+		seeing_fwhm = 2.5 / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
 		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
 		contaminations = []
 
@@ -295,7 +297,10 @@ def main(raw_args=None):
 		with open(lcs[i], 'r') as f:
 			comment = f.readline()
 		# phot_ind = np.where(ap_sizes == ap_radii[i])[0][0]
-		source_ap_rad = float(comment.split('_')[-1].split('.parquet')[0])
+		if force_ap_rad != 0:
+			source_ap_rad = force_ap_rad
+		else:
+			source_ap_rad = float(comment.split('_')[-1].split('.parquet')[0])
 
 		df = pd.read_csv(lcs[i], comment='#', dtype=np.float64)
 		source_id = lcs[i].split('_')[-2]
@@ -311,22 +316,27 @@ def main(raw_args=None):
 		source_ind = np.where(sources['source_id'] == source_id)[0][0] 
 		source_x = sources['X pix'][source_ind]
 		source_y = sources['Y pix'][source_ind]
+		source_ra = sources['ra'][source_ind]
+		source_dec = sources['dec'][source_ind]
 		source_rp = sources['phot_rp_mean_mag'][source_ind]
 		source_G = sources['gq_photogeo'][source_ind]
 		source_bp_rp = sources['bp_rp'][source_ind]
 		source_chip = sources['Chip'][source_ind]
-
+		
 		contamination = 0
 		if cut_contaminated and (lcs[i].split('_')[-2] != field):
 			# estimate contamination 
 			distances = np.array(np.sqrt((source_x-all_field_sources['X pix'])**2+(source_y-all_field_sources['Y pix'])**2))
-			nearby_inds = np.where((distances <= contaminant_grid_size) & (distances != 0))[0]
+			# nearby_inds = np.where((distances <= contaminant_grid_size) & (distances != 0))[0]
+			nearby_inds = np.where((distances <= grid_radius_arcsec) & (distances != 0))[0]
 			if len(nearby_inds) > 0:
 				
 
 				nearby_rp = np.array(all_field_sources['phot_rp_mean_mag'][nearby_inds])
-				nearby_x = np.array(all_field_sources['X pix'][nearby_inds] - source_x)
-				nearby_y = np.array(all_field_sources['Y pix'][nearby_inds] - source_y)
+				# nearby_x = np.array(all_field_sources['X pix'][nearby_inds] - source_x)
+				# nearby_y = np.array(all_field_sources['Y pix'][nearby_inds] - source_y)
+				nearby_y = np.array(source_ra - all_field_sources['ra'][nearby_inds])*3600/PLATE_SCALE
+				nearby_x = np.array(all_field_sources['dec'][nearby_inds] - source_dec)*3600/PLATE_SCALE
 
 				# sometimes the rp mag is nan, remove these entries
 				use_inds = np.where(~np.isnan(nearby_rp))[0]
@@ -347,7 +357,7 @@ def main(raw_args=None):
 
 				# estimate contamination by doing aperture photometry on the simulated image
 				# if the measured flux exceeds 1 by a chosen threshold, record the source's index so it can be removed
-				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=source_ap_rad)
+				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=10)
 				phot_table = aperture_photometry(sim_img, ap)
 				contamination = phot_table['aperture_sum'][0] - 1
 

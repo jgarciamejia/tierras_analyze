@@ -87,13 +87,13 @@ def main(raw_args=None):
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
-	ap.add_argument("-target_x_pix", required=False, default=None, help="x pixel position of the Tierras target in the field", type=float)
-	ap.add_argument("-target_y_pix", required=False, default=None, help="y pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-target_x_pix", required=False, default=2048, help="x pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-target_y_pix", required=False, default=512, help="y pixel position of the Tierras target in the field", type=float)
 	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
 	ap.add_argument("-minimum_night_duration", required=False, default=1, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
 	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
-	ap.add_argument("-cut_contaminated", required=False, default=True, help="Whether or not to cut sources based on contamination metric.")
+	ap.add_argument("-cut_contaminated", required=False, default=False, help="Whether or not to cut sources based on contamination metric.")
 
 	args = ap.parse_args(raw_args)
 
@@ -114,6 +114,12 @@ def main(raw_args=None):
 	cut_contaminated = t_or_f(args.cut_contaminated)
 
 	fpath = '/data/tierras/flattened/'
+
+	# delete any existing global light curves
+	lc_path = f'/data/tierras/fields/{field}/sources/lightcurves/'
+	existing_lc_files = glob(lc_path+'*')
+	for i in range(len(existing_lc_files)):
+		os.remove(existing_lc_files[i])
 
 	# identify dates on which this field was observed 
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
@@ -136,15 +142,15 @@ def main(raw_args=None):
 	# skip some nights of processing for TIC362144730
 	# TODO: automate this process 
 	if field == 'TIC362144730':
-		bad_dates = ['20240519', '20240520', '20240526', '20240528', '20240531', '20240605', '20240607', '20240609', '20240610', '20240706', '20240707', '20240708', '20240710', '20240713', '20240716', '20240717']
+		bad_dates = ['20240519', '20240520', '20240526', '20240528', '20240531', '20240605', '20240607', '20240609', '20240610', '20240706', '20240707', '20240708', '20240710', '20240713', '20240716', '20240717', '20240919', '20240921', '20240922']
 		dates_to_remove = []
 		for i in range(len(bad_dates)):
 			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
 		dates = np.delete(dates, dates_to_remove)
 		date_list = np.delete(date_list, dates_to_remove)		
 
-	# dates = dates[0:2]
-	# date_list = date_list[0:2]
+	# dates = dates[0:18]
+	# date_list = date_list[0:18]
 
 	if field == 'LHS2919':
 		bad_dates = ['20240530', '20240531', '20240601', '20240602']
@@ -160,6 +166,7 @@ def main(raw_args=None):
 		ras = []
 		decs = []
 		
+		# get the average pointing of the central pixel 
 		date = dates[0]
 		ffname = date_list[0].split('/')[-1]
 		files = glob(fpath+f'{date}/{field}/{ffname}/*_red.fit')
@@ -168,16 +175,23 @@ def main(raw_args=None):
 			central_pos = wcs.pixel_to_world(2048, 1024)
 			ras.append(central_pos.ra.value)
 			decs.append(central_pos.dec.value)
-		
+
 		im_shape = np.shape(fits.open(files[0])[0].data)
-		ras, _, _ = sigmaclip(ras)
-		decs, _, _ = sigmaclip(decs)
-		mean_ra = np.mean(ras)
-		mean_dec = np.mean(decs)
+		ras_clipped, _, _ = sigmaclip(ras)
+		decs_clipped, _, _ = sigmaclip(decs)
+		mean_ra = np.mean(ras_clipped)
+		mean_dec = np.mean(decs_clipped)
 		coord = SkyCoord(mean_ra*u.deg, mean_dec*u.deg)
 		# calculate the width and height of the query; add on 1 arcminute for tolerance
 		width = u.Quantity(PLATE_SCALE*im_shape[0],u.arcsec)/np.cos(np.radians(mean_dec)) + u.Quantity(1*u.arcmin)
 		height = u.Quantity(PLATE_SCALE*im_shape[1],u.arcsec) + u.Quantity(1*u.arcmin)
+
+		# identify the image closest to the average position 
+		central_im_file = files[np.argmin(((mean_ra-ras)**2+(mean_dec-decs)**2)**0.5)]
+		with fits.open(central_im_file) as hdul:
+			central_im = hdul[0].data
+			header = hdul[0].header
+			wcs = WCS(header)
 		
 
 	# read in the source df's from each night 
@@ -226,10 +240,12 @@ def main(raw_args=None):
 
 	try:
 		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
-		with open(gaia_id_file, 'r') as f:
-			tierras_target_id = f.readline()
-		tierras_target_id = int(tierras_target_id.split(' ')[-1])
-		# tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix)
+		if os.path.exists(gaia_id_file):
+			with open(gaia_id_file, 'r') as f:
+				tierras_target_id = f.readline()
+			tierras_target_id = int(tierras_target_id.split(' ')[-1])
+		else:
+			tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix) #TODO: How do we programmatically get access to the x/y pixel posion of the target in the sources csv?
 	except:
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
@@ -239,6 +255,7 @@ def main(raw_args=None):
 		grid_radius_arcsec = np.sqrt(2*(contaminant_grid_size/2)**2) * PLATE_SCALE # arcsec
 		contamination_limit = 0.1
 		fwhm_x = 2.5
+		rp_mag_limit = 10.7 # TODO: GENERALIZE THIS! this is only true for a 60-s exposure time and for trying to exclude sources with more than 10% of their frames in the non-linear regime
 		xx, yy = np.meshgrid(np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size)/2), np.arange(-int(contaminant_grid_size/2), int(contaminant_grid_size/2))) # grid of pixels over which to simulate images for contamination estimate
 		seeing_fwhm = np.nanmedian(fwhm_x) / PLATE_SCALE # get median seeing on this night in pixels for contamination estimate
 		seeing_sigma = seeing_fwhm / (2*np.sqrt(2*np.log(2))) # convert from FWHM in pixels to sigma in pixels (for 2D Gaussian modeling in contamination estimate)
@@ -269,26 +286,36 @@ def main(raw_args=None):
 		res['SOURCE_ID'].name = 'source_id' # why does this get returned in all caps? 
 		gaia_coords = SkyCoord(ra=res['ra'], dec=res['dec'], pm_ra_cosdec=res['pmra'], pm_dec=res['pmdec'], obstime=Time('2016',format='decimalyear'))
 		gaia_coords_tierras_epoch = gaia_coords.apply_space_motion(tierras_epoch)
-		# gaia_coords_ra = 
+		
+		# figure out source positions in the Tierras epoch 
+		tierras_pixel_coords = wcs.world_to_pixel(gaia_coords_tierras_epoch)
+		res.add_column(tierras_pixel_coords[0],name='X pix', index=2)
+		res.add_column(tierras_pixel_coords[1],name='Y pix', index=3)
 
 		print('Estimating contamination of field sources...')
+		start_plotting = False
 		for i in range(len(common_source_ids)):
 			print(f'Doing {common_source_ids[i]} ({i+1} of {len(common_source_ids)})')
 			ind = np.where(source_dfs[0]['source_id'] == common_source_ids[i])[0][0]
-			source_ra = source_dfs[0]['ra'][ind]
-			source_dec = source_dfs[0]['dec'][ind]
-			# source_x = source_dfs[0]['X pix'][ind]
-			# source_y = source_dfs[0]['Y pix'][ind]
+			# source_ra = source_dfs[0]['ra'][ind]
+			# source_dec = source_dfs[0]['dec'][ind]
+			source_x = source_dfs[0]['X pix'][ind]
+			source_y = source_dfs[0]['Y pix'][ind]
 			source_rp = source_dfs[0]['phot_rp_mean_mag'][ind]
-			# distances = np.array(np.sqrt((source_x-source_dfs[0]['X pix'])**2+(source_y-source_dfs[0]['Y pix'])**2))
-			distances = np.array(np.sqrt((source_ra-gaia_coords.ra.value)**2+(source_dec-gaia_coords.dec.value)**2))*3600
-			nearby_inds = np.where((distances <= grid_radius_arcsec) & (distances != 0))[0]
+			if source_rp < rp_mag_limit:
+				print(f'Rp = {source_rp:.2f} below Rp mag limit of {rp_mag_limit}, skipping.')
+				continue
+			distances = np.array(np.sqrt((source_x-res['X pix'])**2+(source_y-res['Y pix'])**2))
+			# distances = np.array(np.sqrt((source_ra-gaia_coords.ra.value)**2+(source_dec-gaia_coords.dec.value)**2))*3600
+			nearby_inds = np.where((distances <= grid_radius_arcsec/PLATE_SCALE) & (distances != 0))[0]
 			if len(nearby_inds) > 0:
 				nearby_rp = np.array(res['phot_rp_mean_mag'][nearby_inds])
-				# nearby_x = np.array(source_dfs[0]['X pix'][nearby_inds] - source_x)
-				# nearby_y = np.array(source_dfs[0]['Y pix'][nearby_inds] - source_y)
-				nearby_y = np.array(source_ra - res['ra'][nearby_inds])*3600/PLATE_SCALE
-				nearby_x = np.array(res['dec'][nearby_inds] - source_dec)*3600/PLATE_SCALE
+				nearby_x = np.array(res['X pix'][nearby_inds] - source_x)
+				nearby_y = np.array(res['Y pix'][nearby_inds] - source_y)
+				# nearby_y = np.array(source_ra - res['ra'][nearby_inds])*3600/PLATE_SCALE
+				# nearby_x = np.array(res['dec'][nearby_inds] - source_dec)*3600/PLATE_SCALE
+
+				width = u.Quantity(PLATE_SCALE*im_shape[0],u.arcsec)/np.cos(np.radians(mean_dec)) + u.Quantity(1*u.arcmin)
 
 				# sometimes the rp mag is nan, remove these entries
 				use_inds = np.where(~np.isnan(nearby_rp))[0]
@@ -318,9 +345,12 @@ def main(raw_args=None):
 				ap = CircularAperture((sim_img.shape[1]/2, sim_img.shape[0]/2), r=10)
 				phot_table = aperture_photometry(sim_img, ap)
 				contamination = phot_table['aperture_sum'][0] - 1
-				# if i == 3:
-				# 	plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=80))
-				# 	breakpoint() 
+				# if common_source_ids[i] == 4146926443428750592:
+				# 	start_plotting = True
+				# if start_plotting:
+				# 	plt.imshow(sim_img, origin='lower', norm=simple_norm(sim_img, min_percent=1, max_percent=85))
+				# 	breakpoint()
+				# 	plt.close()
 
 				if (contamination < contamination_limit) or (common_source_ids[i] == tierras_target_id):
 					contaminations.append(contamination) 
@@ -340,7 +370,6 @@ def main(raw_args=None):
 			for j in range(len(common_source_ids)):
 				source_inds[i].extend([np.where(source_dfs[i]['source_id'] == common_source_ids[j])[0][0]])
 
-	breakpoint()
 	times = np.zeros(n_ims, dtype='float64')
 	airmasses = np.zeros(n_ims, dtype='float16')
 	exposure_times = np.zeros(n_ims, dtype='float16')
@@ -373,7 +402,7 @@ def main(raw_args=None):
 		phot_files = sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0])) # sort on aperture size so everything is in order
 
 		if ap_rad is not None:
-			phot_file_radii = np.array([float(i.split('/')[-1].split('.')[-2].split('_')[-1]) for i in phot_files])
+			phot_file_radii = np.array([float(i.split('/')[-1].split('_')[-1].split('.parquet')[0]) for i in phot_files])
 			df_ind = np.where(phot_file_radii == ap_rad)[0][0]
 			n_dfs = 1
 		else:
@@ -433,14 +462,13 @@ def main(raw_args=None):
 	y_deviations = np.median(y - np.nanmedian(y, axis=0), axis=1)
 	median_sky = np.median(sky, axis=1)/exposure_times
 	median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1))
-	
 	# optionally restrict to SAME 
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
 	if same: 
 
 		fwhm_inds = np.where(fwhm_x > 2.5)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
-		airmass_inds = np.where(airmasses > 1.7)[0]
+		airmass_inds = np.where(airmasses > 2)[0] 
 		sky_inds = np.where(median_sky > 5)[0]
 		# humidity_inds = np.where(humidity > 50)[0]
 		flux_inds = np.where(median_flux < 0.5)[0]
@@ -478,11 +506,11 @@ def main(raw_args=None):
 
 			print(f'{dates[i]} dropped! Less than {minimum_night_duration} hours of exposures.')
 			dates_to_remove.append(i)
-	
-	dates = np.delete(dates, dates_to_remove)
-	date_list = np.delete(date_list, dates_to_remove)		
-	times_list = np.delete(times_list, dates_to_remove)
-	night_inds_list = np.delete(night_inds_list, dates_to_remove)
+	if len(dates_to_remove) > 0:
+		dates = np.delete(dates, dates_to_remove)
+		date_list = np.delete(date_list, dates_to_remove)		
+		times_list = np.delete(times_list, dates_to_remove)
+		night_inds_list = np.delete(night_inds_list, dates_to_remove)
 	mask = same_mask==1
 	airmasses[mask] = np.nan
 	exposure_times[mask] = np.nan
@@ -497,13 +525,19 @@ def main(raw_args=None):
 	y[mask,:] = np.nan 
 	sky[mask,:] = np.nan
 	print(f'Quality restrictions cut to {len(np.where(same_mask == 0)[0])} exposures out of {len(x_deviations)} total exposures. Data are on {len(dates)} nights.')
+	
+	# # finally, remove sources that have non-linear flags = 1 for more than 10% of their non-nan frames 	
+	# # NOTE this is not memory efficient...
+	# non_linear_sums = np.sum(non_linear_flags[0][mask==0,:],axis=0)
+	# non_linear_cut = int(sum(mask==0)*0.1)
+	# non_linear_inds = np.where(non_linear_sums < non_linear_cut)[0]
+	
+	# print(f'{len(non_linear_inds)} remain after cutting non-linear sources')
+	# breakpoint()
 
-	breakpoint()
 	# determine maximum time range covered by all of the nights, we'll need this for plotting 
 	time_deltas = [i[-1]-i[0] for i in times_list]
 	x_range = np.nanmax(time_deltas)
-
-	
 
 	# # NOTE: Uncomment these lines if you want to do the weighting on nightly medians only. 
 	# binned_times = np.zeros(len(night_inds_list))
@@ -598,7 +632,6 @@ def main(raw_args=None):
 	
 	for tt in range(len(common_source_ids)):
 		tloop = time.time()
-		
 		if common_source_ids[tt] == tierras_target_id:
 			target = field
 			target_gaia_id = tierras_target_id
@@ -650,7 +683,7 @@ def main(raw_args=None):
 			# use the weights calculated in mearth_style to create the ALC 
 			alc = np.matmul(flux[i][:,ref_inds_loop], weights)
 			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds_loop]**2, weights**2))
-
+				
 			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
 			target_flux = copy.deepcopy(flux[i][:,tt])
 			target_flux_err = copy.deepcopy(flux_err[i][:,tt])
