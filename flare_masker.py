@@ -69,8 +69,8 @@ def flare_masker(x_list, x, y, threshold=2):
         flare_inds = np.unique(flare_inds).astype('int') # fixes issue if multiple flares in have been identified in a single sequence
         mask[night_inds[flare_inds]] = False
 
-    plt.figure()
-    plt.plot(x,y)
-    plt.plot(x[mask],y[mask])
-    breakpoint()
+    # plt.figure()
+    # plt.plot(x,y)
+    # plt.plot(x[mask],y[mask])
+    # breakpoint()
     return mask

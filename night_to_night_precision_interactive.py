@@ -217,7 +217,10 @@ def main(raw_args=None):
 
 	# get a photometry df so we can plot source positions
 	# TODO generalize where this is read in from 
-	phot_df = pq.read_table(f'/data/tierras/photometry/{best_date}/{field}/{ffname}/{best_date}_{field}_circular_fixed_ap_phot_5.parquet').to_pandas()
+	try:
+		phot_df = pq.read_table(f'/data/tierras/photometry/{best_date}/{field}/{ffname}/{best_date}_{field}_circular_fixed_ap_phot_5.parquet').to_pandas()
+	except:
+		phot_df = pq.read_table(f'/data/tierras/photometry/{best_date}/{field}/{ffname}/{best_date}_{field}_circular_fixed_ap_phot_5.0.parquet').to_pandas()
 
 	flattened_files = get_flattened_files(best_date, field, ffname)
 	source_image = fits.open(flattened_files[best_im_ind])[0].data
@@ -298,8 +301,9 @@ def main(raw_args=None):
 			print(f'Doing Gaia DR3 {source} ({i+1} of {len(lc_files)})')
 			doing_target = False
 		except:
-			source = identify_target_gaia_id(str(source), source_df, x_pix=2048, y_pix=512)
-			doing_target=  True 
+			source = lc_files[i].split('/')[-1].split('_')[0]
+			source = identify_target_gaia_id(source, source_df, x_pix=2048, y_pix=512)
+			doing_target = True 
 
 		with open(lc_files[i],'r') as f: 
 			comment = f.readline()
@@ -311,6 +315,13 @@ def main(raw_args=None):
 		source_rp = source_df['phot_rp_mean_mag'][source_ind]
 		source_G = source_df['gq_photogeo'][source_ind]
 		source_bp_rp = source_df['bp_rp'][source_ind]
+
+		# sometimes targets aren't in the Bailer-Jones table and don't have a G mag. Calculate using parallax if this is the case.
+		if doing_target and np.isnan(source_G): 
+			source_parallax = source_df['parallax'][source_ind]
+			source_distance = 1/(source_parallax/1000)
+			source_G = source_df['phot_g_mean_mag'][source_ind] - 5*np.log10(source_distance) + 5
+
 		contamination = 0
 		if cut_contaminated and not doing_target:
 			# estimate contamination 
@@ -432,7 +443,7 @@ def main(raw_args=None):
 		y_pos.append(phot_df[f'S{source_ind} Y'][best_im_ind])
 		rp.append(source_df['phot_rp_mean_mag'][source_ind])
 		bp_rp.append(source_df['bp_rp'][source_ind])
-		G.append(source_df['gq_photogeo'][source_ind])
+		G.append(source_G)
 		rp_mags.append(source_df['phot_rp_mean_mag'][source_ind])
 		if source in ref_ids:
 			ref_ind = np.where(source == ref_ids)[0][0]

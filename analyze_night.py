@@ -160,7 +160,7 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 			# alc_save[:,jj] = F_e
 			f_corr_save[:, jj]  = F_corr
 			# sigma_save[:, jj] = sigma_tot
-			
+				
 		# update the weights using the measured standard deviations	
 		weights_new = 1/stddevs_measured**2
 		weights_new /= np.sum(weights_new[~np.isinf(weights_new)])			
@@ -183,15 +183,10 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# weights[np.where(noise_ratios[~np.isnan(noise_ratios)]>h)[0]] = 0
 
 	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=1).mask 
+	weights[sc_mask] = 0 	
 
-	# breakpoint()
-	weights[sc_mask] = 0 
-	# weights[np.where(noise_ratios>5)[0]] = 0
 	weights /= sum(weights)
-	# weights[np.where(abs(-0.5-allen_slopes) > 0.3)] = 0 
-	# weights /= sum(weights)	
 
-	# breakpoint() 
 
 	if len(np.where(weights == 0)[0]) > 0:
 		# now repeat the weighting loop with the bad refs removed 
@@ -287,7 +282,7 @@ def allen_deviation(times, flux, flux_err):
 		n_bins = int(np.floor(len(times)/bins[i]))
 		for j in range(n_bins):
 			inds_list[i].append(np.arange(j*bins[i],(j+1)*bins[i]))
-
+	
 	std = np.zeros(len(bins))
 	theo = np.zeros(len(bins))
 
@@ -309,6 +304,21 @@ def allen_deviation(times, flux, flux_err):
 	# plt.close()	
 	# slope = coeffs[1]
 	return bins, std, theo
+
+def allen_deviation_prebinned(bins, inds_list, times, flux, flux_err):
+
+	std = np.zeros(len(bins))
+	theo = np.zeros(len(bins))
+
+	for i in range(len(inds_list)):
+		inds = inds_list[i] 
+		binned_flux = []
+		theo[i] = np.nanmean(flux_err)*1/np.sqrt(bins[i])
+		for j in range(len(inds)):
+			binned_flux.extend([np.nanmean(flux[inds[j]])])
+		std[i] = np.nanstd(binned_flux)
+
+	return std, theo
 
 def plot_target_summary(data_dict, bin_mins=10):
 	plt.ioff()
@@ -604,7 +614,6 @@ def plot_raw_fluxes(data_dict, sources):
 	plt.tick_params(labelsize=14)
 	plt.tight_layout()
 
-	breakpoint()
 	output_path = f'/data/tierras/lightcurves/{date}/{target}/{ffname}/{date}_{target}_raw_flux.png'
 	plt.savefig(output_path,dpi=300)
 	set_tierras_permissions(output_path)
@@ -652,8 +661,8 @@ def main(raw_args=None):
 	ap.add_argument("-overwrite", required=False, default=False, help="Whether or not to overwrite existing lc files.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
-	ap.add_argument("-target_x_pix", required=False, default=None, help="x pixel position of the Tierras target in the field", type=float)
-	ap.add_argument("-target_y_pix", required=False, default=None, help="y pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-target_x_pix", required=False, default=2048, help="x pixel position of the Tierras target in the field", type=float)
+	ap.add_argument("-target_y_pix", required=False, default=512, help="y pixel position of the Tierras target in the field", type=float)
 	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 
 	args = ap.parse_args(raw_args)
@@ -724,10 +733,11 @@ def main(raw_args=None):
 	phot_files = sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0])) # sort on aperture size so everything is in order
 
 	n_dfs = len(phot_files)
-	breakpoint()
 	ancillary_tab = pq.read_table(ancillary_file, columns=ancillary_cols)
 
 	source_inds = np.arange(len(source_ids))
+
+	
 	for j in range(n_dfs):
 		# only read in the necessary columns from the data files to save a lot of time in very crowded fields
 		use_cols = []
@@ -791,7 +801,6 @@ def main(raw_args=None):
 		same_mask[sky_inds] = 1
 		# same_mask[humidity_inds] = 1
 		same_mask[flux_inds] = 1
-		breakpoint()	
 		print(f'Restrictions cut to {len(np.where(same_mask == 0)[0])} SAME exposures out of {len(x_deviations)} total exposures.')
 		mask = same_mask==1
 
@@ -815,10 +824,12 @@ def main(raw_args=None):
 
 	try:
 		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
-		with open(gaia_id_file, 'r') as f:
-			tierras_target_id = f.readline()
-		tierras_target_id = int(tierras_target_id.split(' ')[-1])
-		# tierras_target_id = identify_target_gaia_id(field, source_df, x_pix=targ_x_pix, y_pix=targ_y_pix)
+		if os.path.exists(gaia_id_file):
+			with open(gaia_id_file, 'r') as f:
+				tierras_target_id = f.readline()
+			tierras_target_id = int(tierras_target_id.split(' ')[-1])
+		else:
+			tierras_target_id = identify_target_gaia_id(field, source_df, x_pix=targ_x_pix, y_pix=targ_y_pix) #TODO: How do we programmatically get access to the x/y pixel posion of the target in the sources csv?	
 	except:
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
@@ -980,6 +991,9 @@ def main(raw_args=None):
 				best_alc = alc
 				best_alc_err = alc_err
 
+		# if source_ids[tt] == 2052871260847605120:
+		# 	breakpoint()
+
 		if best_corr_flux is not None:
 			
 			v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
@@ -1018,10 +1032,7 @@ def main(raw_args=None):
 			set_tierras_permissions(output_path/f'{date}_{target}_lc.csv')
 			
 			if plot: 
-				data_dict = {'Target':target, 'Date':date, 'ffname':ffname, 'BJD':times+x_offset, 'Flux':flux[best_phot_file][:,tt], 
-				 'Flux Error':flux_err[best_phot_file][:,tt], 'ALC':best_alc, 'ALC Error':best_alc_err, 'Corrected Flux':best_corr_flux,
-				 'Corrected Flux Error':best_corr_flux_err, 'Airmass':airmasses, 'Hour Angle':ha, 'Sky':sky[:,tt], 'X':x[:,tt], 'Y':y[:,tt], 
-				 'FWHM X':fwhm_x, 'FWHM Y':fwhm_y, 'Dome Humidity':humidity, 'Exposure Time':exposure_times}
+				data_dict = {'Target':target, 'Date':date, 'ffname':ffname, 'BJD':times+x_offset, 'Flux':flux[best_phot_file][:,tt], 'Flux Error':flux_err[best_phot_file][:,tt], 'ALC':best_alc, 'ALC Error':best_alc_err, 'Corrected Flux':best_corr_flux, 'Corrected Flux Error':best_corr_flux_err, 'Airmass':airmasses, 'Hour Angle':ha, 'Sky':sky[:,tt], 'X':x[:,tt], 'Y':y[:,tt], 'FWHM X':fwhm_x, 'FWHM Y':fwhm_y, 'Dome Humidity':humidity, 'Exposure Time':exposure_times}
 				
 				plot_target_summary(data_dict)
 			gc.collect() # do garbage collection to prevent memory leaks 

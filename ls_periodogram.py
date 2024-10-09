@@ -139,7 +139,7 @@ def periodogram_plot(x, y, y_err, per, power, phase=False, color_by_time=False):
     return 
 
 if __name__ == '__main__':
-    field = 'TIC362144730'
+    field = '2MASSJ0045+1634'
     median_filter_w = 0
     
     # target = 'Gaia DR3 4147111775525655040'
@@ -150,9 +150,9 @@ if __name__ == '__main__':
     # pers = np.arange(0.11, 0.15, 1/86400)
     # sc = True
 
-    target = 'Gaia DR3 4146918334529950720'
-    pers = None
-    sc = True
+    # target = 'Gaia DR3 4146918334529950720'
+    # pers = None
+    # sc = True
 
     # target = 'Gaia DR3 4147119923100810880'
     # pers = np.arange(0.273, .274, 1/86400)
@@ -195,12 +195,20 @@ if __name__ == '__main__':
     # pers = np.arange(0.8,1.5,1/86400)
     # sc = True
 
-    field = 'LP119-26'
-    target = 'LP119-26'
-    pers = np.arange(2, 8, 2/86400)
-    # pers = None
-    sc = True 
-    median_filter_w = 9
+    # field = 'LP119-26'
+    # target = 'LP119-26'
+    # pers = np.arange(1, 10, 2/86400)
+    # # pers = None
+    # sc = True 
+    # median_filter_w = 9
+
+    # target = 'Gaia DR3 31210844441123456'
+    # pers = np.arange(0.3, 0.4, 1/86400)
+    # sc = True
+
+    target = field 
+    pers = np.arange(0.1, 20, 5/86400)
+    sc = True
 
     df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{target}_global_lc.csv', comment='#')
     x = np.array(df['BJD TDB'])
