@@ -302,7 +302,12 @@ def main(raw_args=None):
 			doing_target = False
 		except:
 			source = lc_files[i].split('/')[-1].split('_')[0]
-			source = identify_target_gaia_id(source, source_df, x_pix=2048, y_pix=512)
+			# get the source position using the cat-x/cat-y keys in the header
+			hdr = fits.open(glob.glob(f'/data/tierras/flattened/{date_list[-1].split("/")[4]}/{field}/flat0000/*.fit')[0])[0].header
+			targ_x_pix = hdr['CAT-X']
+			targ_y_pix = hdr['CAT-Y']
+			source = identify_target_gaia_id(source, source_df, x_pix=targ_x_pix, y_pix=targ_y_pix)
+			target_gaia_id = source
 			doing_target = True 
 
 		with open(lc_files[i],'r') as f: 
@@ -497,6 +502,11 @@ def main(raw_args=None):
 	# gaia_var_inds = np.where(source_df['phot_variable_flag'] == 'VARIABLE')[0]
 	# ax1.plot(rp_mags[gaia_var_inds], night_to_nights[gaia_var_inds], marker='x', zorder=1, label='Gaia variable', color='m', ls='', mew=1.5, ms=6, alpha=1)
 	ax1.plot(weighted_ref_rp,weighted_ref_n2n, marker='x', zorder=1, label='Ref star', color='m', ls='', mew=1.5, ms=6, alpha=1)
+
+	# add an indicator for the target 
+	targ_ind = np.where(source_ids == target_gaia_id)[0][0]
+	ax1.plot(rp_mags[targ_ind], night_to_nights[targ_ind], gid=target_gaia_id, color='#EFBF04', marker='*', mew=1.5, mec='k', ms=18)
+
 	ax1.set_xlim(np.nanmin(rp_mags)-0.1, np.nanmax(rp_mags)+0.1)
 	ax1.set_yscale('log')
 	# ax.invert_xaxis()
@@ -516,6 +526,8 @@ def main(raw_args=None):
 	
 		ax4.plot(bp_rp[i], G[i], marker='.', color='#b0b0b0', ls='', gid=source_ids[i], zorder=0)
 	ax4.plot(weighted_ref_bp_rp,weighted_ref_G, marker='x', zorder=1, label='Ref star', color='m', ls='', mew=1.5, ms=6, alpha=1)
+	ax4.plot(bp_rp[targ_ind], G[targ_ind], gid=target_gaia_id, color='#EFBF04', marker='*', mew=1.5, mec='k', ms=18)
+
 	ax4.invert_yaxis()
 	ax4.set_aspect('equal')
 	ax4.set_xlabel('Bp-Rp', fontsize=14)
@@ -548,6 +560,8 @@ def main(raw_args=None):
 	fig2.canvas.mpl_connect('button_press_event', on_click_2)
 
 	sc = ax1_2.scatter(x,y, c=np.log10(ratios), vmin=0, vmax=1, gid=source_ids)
+	ax1_2.plot(x[targ_ind], y[targ_ind], gid=target_gaia_id, color='#EFBF04', marker='*', mew=1.5, mec='k', ms=18)
+
 	# cbar = plt.colorbar(sc, label='log$_{10}$(measured/theory)')
 	ax1_2.scatter(x[best_ratios], y[best_ratios], c=np.log10(ratios[best_ratios]), vmin=0, vmax=1, edgecolors='m', linewidth=1.5) # plot the best 10% on top
 	# cbar.ax.plot([0,1], [np.log10(perc),np.log10(perc)], lw=3, color='m')
@@ -570,6 +584,7 @@ def main(raw_args=None):
 	fig3.canvas.mpl_connect('button_press_event', on_click_3)
 
 	sc = ax1_3.scatter(bp_rp, G, c=np.log10(ratios), vmin=0, vmax=1)
+	ax1_3.plot(bp_rp[targ_ind], G[targ_ind], gid=target_gaia_id, color='#EFBF04', marker='*', mew=1.5, mec='k', ms=18)
 	divider = make_axes_locatable(ax1_3)
 	cax = divider.append_axes('right', size='5%', pad=0.05)
 	cbar = fig3.colorbar(sc, cax=cax, label='log$_{10}$(measured/theory)')
