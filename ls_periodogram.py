@@ -139,7 +139,7 @@ def periodogram_plot(x, y, y_err, per, power, phase=False, color_by_time=False):
     return 
 
 if __name__ == '__main__':
-    field = '2MASSJ0045+1634'
+    field = 'LSRJ0602+3910'
     median_filter_w = 0
     
     # target = 'Gaia DR3 4147111775525655040'
@@ -207,7 +207,7 @@ if __name__ == '__main__':
     # sc = True
 
     target = field 
-    pers = np.arange(0.1, 20, 5/86400)
+    pers = np.arange(0.1, 5, 5/86400)
     sc = True
 
     df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{target}_global_lc.csv', comment='#')
