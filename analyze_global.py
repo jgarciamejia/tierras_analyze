@@ -34,7 +34,7 @@ import astropy.units as u
 from astropy.visualization import simple_norm 
 
 def identify_target_gaia_id(target, sources=None, x_pix=None, y_pix=None):
-	
+		
 	if 'Gaia DR3' in target:
 		gaia_id = int(target.split('Gaia DR3 ')[1])
 		return gaia_id
@@ -87,8 +87,6 @@ def main(raw_args=None):
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
-	ap.add_argument("-target_x_pix", required=False, default=2048, help="x pixel position of the Tierras target in the field", type=float)
-	ap.add_argument("-target_y_pix", required=False, default=512, help="y pixel position of the Tierras target in the field", type=float)
 	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
 	ap.add_argument("-minimum_night_duration", required=False, default=1, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
@@ -102,8 +100,6 @@ def main(raw_args=None):
 	ffname = args.ffname
 	email = t_or_f(args.email)
 	plot = t_or_f(args.plot)
-	targ_x_pix = args.target_x_pix
-	targ_y_pix = args.target_y_pix
 	same = t_or_f(args.SAME)
 	minimum_night_duration = args.minimum_night_duration
 	ap_rad = args.ap_rad	
@@ -239,13 +235,17 @@ def main(raw_args=None):
 			n_ims += len(pq.read_table(phot_files[0]))
 
 	try:
-		gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
-		if os.path.exists(gaia_id_file):
-			with open(gaia_id_file, 'r') as f:
-				tierras_target_id = f.readline()
-			tierras_target_id = int(tierras_target_id.split(' ')[-1])
-		else:
-			tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix) #TODO: How do we programmatically get access to the x/y pixel posion of the target in the sources csv?
+		# gaia_id_file = f'/data/tierras/fields/{field}/{field}_gaia_dr3_id.txt'
+		# if os.path.exists(gaia_id_file):
+		# 	with open(gaia_id_file, 'r') as f:
+		# 		tierras_target_id = f.readline()
+		# 	tierras_target_id = int(tierras_target_id.split(' ')[-1])
+		# else:
+		# read the first image on the last date to get the expected target x/y position
+		hdr = fits.open(glob(fpath+f'{dates[-1]}'+f'/{field}/flat0000/*.fit')[0])[0].header
+		targ_x_pix = hdr['CAT-X']
+		targ_y_pix = hdr['CAT-Y']
+		tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix) 
 	except:
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
