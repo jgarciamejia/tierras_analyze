@@ -139,7 +139,7 @@ def periodogram_plot(x, y, y_err, per, power, phase=False, color_by_time=False):
     return 
 
 if __name__ == '__main__':
-    field = 'LSRJ0602+3910'
+    field = '2MASSJ0615-0100'
     median_filter_w = 0
     
     # target = 'Gaia DR3 4147111775525655040'
