@@ -462,22 +462,40 @@ def main(raw_args=None):
 	y_deviations = np.median(y - np.nanmedian(y, axis=0), axis=1)
 	median_sky = np.median(sky, axis=1)/exposure_times
 	median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1))
+	
+	# mask on median flux; we dont want to include exposures that are low flux due to clouds, field shifts, WCS errors, etc.
+	flux_mask = np.zeros(len(fwhm_x), dtype='int')
+	flux_inds = np.where(median_flux < 0.8)[0]
+	flux_mask[flux_inds] = 1
+	mask = flux_mask == 1
+	airmasses[mask] = np.nan
+	exposure_times[mask] = np.nan
+	filenames[mask] = np.nan
+	ha[mask] = np.nan
+	humidity[mask] = np.nan
+	fwhm_x[mask] = np.nan 
+	fwhm_y[mask] = np.nan 
+	flux[:,mask,:] = np.nan 
+	flux_err[:,mask,:] = np.nan 
+	x[mask,:] = np.nan 
+	y[mask,:] = np.nan 
+	sky[mask,:] = np.nan
+	print(f'Masked {sum(flux_mask)} exposures with fluxes less than 20% below the median.')
+	
 	# optionally restrict to SAME 
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
 	if same: 
-
 		fwhm_inds = np.where(fwhm_x > 2.5)[0]
 		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
 		airmass_inds = np.where(airmasses > 2)[0] 
 		sky_inds = np.where(median_sky > 5)[0]
 		# humidity_inds = np.where(humidity > 50)[0]
-		flux_inds = np.where(median_flux < 0.5)[0]
 		same_mask[fwhm_inds] = 1
 		same_mask[pos_inds] = 1
 		same_mask[airmass_inds] = 1
 		same_mask[sky_inds] = 1
 		# same_mask[humidity_inds] = 1
-		same_mask[flux_inds] = 1
+		# same_mask[flux_inds] = 1
 		mask = same_mask==1
 
 		# times[mask] = np.nan
@@ -743,7 +761,8 @@ def main(raw_args=None):
 			# 	print('Possible variable!')
 			# 	plot = False
 
-
+			# if common_source_ids[tt] == tierras_target_id:
+			#	breakpoint() 
 			# do a plot if this is the tierras target 
 
 			if plot:
