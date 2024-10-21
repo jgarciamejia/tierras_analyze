@@ -89,7 +89,7 @@ def main(raw_args=None):
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
 	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
-	ap.add_argument("-minimum_night_duration", required=False, default=1, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
+	ap.add_argument("-minimum_night_duration", required=False, default=0, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
 	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
 	ap.add_argument("-cut_contaminated", required=False, default=False, help="Whether or not to cut sources based on contamination metric.")
 
@@ -132,7 +132,29 @@ def main(raw_args=None):
 					break
 		date_list = date_list[dates_to_keep]
 
-	# date_list = date_list[0:7]
+	# # loop over the dates and get the pointing in each image; remove dates where the median pointing is off 
+	# ras = []
+	# decs = []
+	# fig, ax = plt.subplots(1, 2, figsize=(12,5))
+	# for i in range(len(date_list)):
+	# 	date = date_list[i].split('/')[4]
+	# 	flat_path = f'/data/tierras/flattened/{date}/{field}/{ffname}/'
+	# 	fits_files = glob(flat_path+'*.fit')
+	# 	night_ras = []
+	# 	night_decs = []
+	# 	for j in range(len(fits_files)):
+	# 		wcs = WCS(fits.open(fits_files[j])[0].header)
+	# 		sc_center = wcs.pixel_to_world(2047, 1023)
+	# 		night_ras.append(sc_center.ra.value)
+	# 		night_decs.append(sc_center.dec.value)
+	# 	ras.append(np.median(night_ras))
+	# 	decs.append(np.median(night_decs))
+	# 	ax[0].hist(night_ras)
+	# 	ax[1].hist(night_decs)
+	# 	print(date)
+	# 	breakpoint()
+	# breakpoint()
+	
 	dates = np.array([i.split('/')[4] for i in date_list])
 
 	# skip some nights of processing for TIC362144730
@@ -197,7 +219,8 @@ def main(raw_args=None):
 		source_file = glob(date_list[i]+'/**sources.csv')[0]
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
-
+		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
+	
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
@@ -385,13 +408,14 @@ def main(raw_args=None):
 	x = np.zeros((n_ims, n_sources), dtype='float32')
 	y = np.zeros_like(x)
 	sky = np.zeros_like(x)
+	wcs_flags = np.zeros(n_ims, dtype='bool')
 
 	times_list = []
 	start = 0
 
 	t1 = time.time()
 
-	ancillary_cols = ['Filename', 'BJD TDB', 'Airmass', 'Exposure Time', 'HA', 'Dome Humid', 'FWHM X', 'FWHM Y']
+	ancillary_cols = ['Filename', 'BJD TDB', 'Airmass', 'Exposure Time', 'HA', 'Dome Humid', 'FWHM X', 'FWHM Y', 'WCS Flag']
 
 	for i in range(len(date_list)):
 		print(f'Reading in photometry from {date_list[i]} (date {i+1} of {len(date_list)}).')
@@ -441,7 +465,8 @@ def main(raw_args=None):
 			humidity[start:stop] = np.array(ancillary_tab['Dome Humid'])
 			fwhm_x[start:stop] = np.array(ancillary_tab['FWHM X'])
 			fwhm_y[start:stop] = np.array(ancillary_tab['FWHM Y'])
-			
+			wcs_flags[start:stop] = np.array(ancillary_tab['WCS Flag'])
+
 			for k in range(n_sources):
 				flux[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Source-Sky'])
 				flux_err[j,start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Source-Sky Err'])
@@ -467,20 +492,7 @@ def main(raw_args=None):
 	flux_mask = np.zeros(len(fwhm_x), dtype='int')
 	flux_inds = np.where(median_flux < 0.8)[0]
 	flux_mask[flux_inds] = 1
-	mask = flux_mask == 1
-	airmasses[mask] = np.nan
-	exposure_times[mask] = np.nan
-	filenames[mask] = np.nan
-	ha[mask] = np.nan
-	humidity[mask] = np.nan
-	fwhm_x[mask] = np.nan 
-	fwhm_y[mask] = np.nan 
-	flux[:,mask,:] = np.nan 
-	flux_err[:,mask,:] = np.nan 
-	x[mask,:] = np.nan 
-	y[mask,:] = np.nan 
-	sky[mask,:] = np.nan
-	print(f'Masked {sum(flux_mask)} exposures with fluxes less than 20% below the median.')
+	
 	
 	# optionally restrict to SAME 
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
@@ -529,7 +541,8 @@ def main(raw_args=None):
 		date_list = np.delete(date_list, dates_to_remove)		
 		times_list = np.delete(times_list, dates_to_remove)
 		night_inds_list = np.delete(night_inds_list, dates_to_remove)
-	mask = same_mask==1
+	
+	mask = (same_mask == 1) | (flux_mask == 1) | (wcs_flags == 1)
 	airmasses[mask] = np.nan
 	exposure_times[mask] = np.nan
 	filenames[mask] = np.nan
@@ -542,7 +555,8 @@ def main(raw_args=None):
 	x[mask,:] = np.nan 
 	y[mask,:] = np.nan 
 	sky[mask,:] = np.nan
-	print(f'Quality restrictions cut to {len(np.where(same_mask == 0)[0])} exposures out of {len(x_deviations)} total exposures. Data are on {len(dates)} nights.')
+
+	print(f'Quality restrictions cut to {len(x_deviations)-sum(mask)} exposures out of {len(x_deviations)} total exposures. Data are on {len(dates)} nights.')
 	
 	# # finally, remove sources that have non-linear flags = 1 for more than 10% of their non-nan frames 	
 	# # NOTE this is not memory efficient...
