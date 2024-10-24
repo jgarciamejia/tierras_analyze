@@ -264,8 +264,12 @@ def main(raw_args=None):
 		else:
 			times_list.append(times[time_breaks[i-1]+1:time_breaks[i]+1])
 			times_inds.append(np.arange(time_breaks[i-1]+1,time_breaks[i]+1))
-	times_list.append(times[time_breaks[-1]+1:len(times)])
-	times_inds.append(np.arange(time_breaks[-1]+1,len(times)))
+	if len(time_breaks) > 0:
+		times_list.append(times[time_breaks[-1]+1:len(times)])
+		times_inds.append(np.arange(time_breaks[-1]+1,len(times)))
+	else:
+		times_list.append(times)
+		times_inds.append(np.arange(len(times)))
 
 	night_to_nights = [] 
 	night_to_nights_theory_calculated = []
