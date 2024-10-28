@@ -69,18 +69,43 @@ def main(raw_args=None):
 		ax2.cla()
 		# ax2.errorbar(times_save[point], flux_save[point], flux_err_save[point], marker='.', ls='', ecolor='#b0b0b0', color='#b0b0b0')
 		# ax2.errorbar(bin_times_save[point], bin_flux_save[point], bin_flux_err_save[point], marker='o', color='k', ecolor='k', mfc='none', zorder=3, mew=1.5, ms=7, ls='')
-		ax2.errorbar(times_arr[point], flux_arr[point], flux_err_arr[point], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='')
+		ax2.errorbar(times_arr[point], flux_arr[point], flux_err_arr[point], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='', label=source_ids[point])
 		ax2.errorbar(bx_arr[point], by_arr[point], bye_arr[point], marker='o', color='k', ls='', zorder=3)
 		ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
 		ax2.grid(alpha=0.5)
 		ax2.tick_params(labelsize=12)
-		ax2.set_xlabel('Time (BJD$_{TDB}$)', fontsize=14)
 		ax2.set_ylabel('Normalized Flux', fontsize=14)
-		ax2.set_title(source_ids[point], fontsize=14)
+		# ax2.set_title(source_ids[point], fontsize=14)
+		ax2.legend()
 
 		# # update the field plot 
 		ax3.set_xlim(x_pos[point]-50, x_pos[point]+50)
 		ax3.set_ylim(y_pos[point]-50, y_pos[point]+50)
+
+		# update sky background and x/y pixel positions
+		# nan out any frames that are nan in the flux array for this source 
+		nan_inds = np.where(np.isnan(flux_arr[point]))[0]
+		sky_plot = global_sky_array[point]
+		x_plot = global_x_array[point]
+		y_plot = global_y_array[point]	
+		sky_plot[nan_inds] = np.nan
+		x_plot[nan_inds] = np.nan 
+		y_plot[nan_inds] = np.nan 
+		x_plot -= np.nanmedian(x_plot)
+		y_plot -= np.nanmedian(y_plot)
+
+		ax6.cla()
+		ax6.plot(times, sky_plot, marker='.', ls='', color='tab:cyan')
+		ax6.set_ylabel('Sky (ADU/s)')
+
+		ax7.cla()
+		ax7.plot(times, x_plot, marker='.', ls='', color='tab:green', label='X-med(X)')
+		ax7.plot(times, y_plot, marker='.', ls='', color='tab:red', label='Y-med(Y)')		
+		ax7.legend()
+		ax7.set_ylabel('Pos (pix.)')
+
+		plt.subplots_adjust(hspace=0.35)
+
 
 	def on_click_2(event):
 		global highlight_2
@@ -180,6 +205,8 @@ def main(raw_args=None):
 	ffname = args.ffname
 	cut_contaminated = t_or_f(args.cut_contaminated)
 
+	# get global ancillary data 
+	global_ancillary_data = pd.read_csv(f'/data/tierras/fields/{field}/global_ancillary_data.csv')
 
 	# get dates on which field was observed so we can plot an image of the field
 	date_list = glob.glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
@@ -228,7 +255,8 @@ def main(raw_args=None):
 	# get the global light curves that have been created for this field
 	lc_files = glob.glob(f'/data/tierras/fields/{field}/sources/lightcurves/**global_lc.csv')
 	times = np.array(pd.read_csv(lc_files[0], comment='#')['BJD TDB'])
-	times -= times[0] 
+	x_offset = times[0]
+	times -= x_offset
 
 	# read in positions of sources in the reference image
 	# x_pos = np.zeros(len(lc_files))
@@ -288,6 +316,9 @@ def main(raw_args=None):
 	rp = []
 	bp_rp = []
 	G = []
+	global_sky_array = []
+	global_x_array = []
+	global_y_array = []
 
 	if cut_contaminated:	
 		images = get_flattened_files(date_list[0].split('/')[4], field, 'flat0000')
@@ -409,27 +440,51 @@ def main(raw_args=None):
 			calculated_night_err = calculated_flux_err[times_inds[j]]
 			nan_inds = ~np.isnan(night_flux)
 
-			night_times = night_times[nan_inds]
-			night_flux = night_flux[nan_inds]
-			calculated_night_err = calculated_night_err[nan_inds]
+			# night_times = night_times[nan_inds]
+			# night_flux = night_flux[nan_inds]
+			# calculated_night_err = calculated_night_err[nan_inds]
 
-			v, l, h = sigmaclip(night_flux, 4, 4)
+			v, l, h = sigmaclip(night_flux[nan_inds], 4, 4)
 			sc_inds = np.where((night_flux >= l) & (night_flux <= h))[0]
-			sc_times = night_times[sc_inds]
-			sc_flux = night_flux[sc_inds]
-			sc_err = calculated_night_err[sc_inds]
+			bad_sc_inds = np.where((night_flux < l) | (night_flux > h))[0]
+			# if len(bad_sc_inds) > 0:
+			# 	breakpoint()
 
-			n_exp = len(sc_flux)
+			night_times[bad_sc_inds] = np.nan 
+			night_flux[bad_sc_inds] = np.nan
+			calculated_night_err[bad_sc_inds] = np.nan
+			# sc_times = night_times 
+			# sc_flux = night_flux
+			# sc_err = calculated_night_err
+			# sc_times = night_times[sc_inds]
+			# sc_flux = night_flux[sc_inds]
+			# sc_err = calculated_night_err[sc_inds]
+			# breakpoint()
 
-			measured_noise[j] = 1.2533*np.nanstd(sc_flux)/(n_exp**(1/2))
-			night_medians[j] = np.nanmedian(sc_flux)
-			night_errs_on_meds[j] = 1.2533*np.nanmedian(sc_err)/(n_exp**(1/2))
+			# n_exp = sum(~np.isnan(sc_flux))
 
-			sc_times_arr.extend(sc_times)
-			sc_flux_arr.extend(sc_flux)
-			sc_flux_err_arr.extend(sc_err)
-			sc_bx_arr.extend([np.nanmean(sc_times)])
-			sc_by_arr.extend([np.nanmedian(sc_flux)])
+			# measured_noise[j] = 1.2533*np.nanstd(sc_flux)/(n_exp**(1/2))
+			# night_medians[j] = np.nanmedian(sc_flux)
+			# night_errs_on_meds[j] = 1.2533*np.nanmedian(sc_err)/(n_exp**(1/2))
+
+			# sc_times_arr.extend(sc_times)
+			# sc_flux_arr.extend(sc_flux)
+			# sc_flux_err_arr.extend(sc_err)
+			# sc_bx_arr.extend([np.nanmean(sc_times)])
+			# sc_by_arr.extend([np.nanmedian(sc_flux)])
+			# sc_bye_arr.extend([measured_noise[j]])
+
+			n_exp = sum(~np.isnan(night_flux))
+
+			measured_noise[j] = 1.2533*np.nanstd(night_flux)/(n_exp**(1/2))
+			night_medians[j] = np.nanmedian(night_flux)
+			night_errs_on_meds[j] = 1.2533*np.nanmedian(calculated_night_err)/(n_exp**(1/2))
+
+			sc_times_arr.extend(night_times)
+			sc_flux_arr.extend(night_flux)
+			sc_flux_err_arr.extend(calculated_night_err)
+			sc_bx_arr.extend([np.nanmean(night_times)])
+			sc_by_arr.extend([np.nanmedian(night_flux)])
 			sc_bye_arr.extend([measured_noise[j]])
 
 		
@@ -439,6 +494,10 @@ def main(raw_args=None):
 		bx_arr.append(np.array(sc_bx_arr))
 		by_arr.append(np.array(sc_by_arr))
 		bye_arr.append(np.array(sc_bye_arr))
+
+		global_sky_array.append(np.array(df['Sky Background (ADU/s)']))
+		global_x_array.append(np.array(df['X']))
+		global_y_array.append(np.array(df['Y']))
 
 		n2n = np.nanstd(night_medians)
 		night_to_nights.append(n2n)
@@ -469,6 +528,10 @@ def main(raw_args=None):
 				weighted_ref_bp_rp.append(source_bp_rp)
 				weighted_ref_G.append(source_G)
 
+	global_sky_array = np.array(global_sky_array)
+	global_x_array = np.array(global_x_array)
+	global_y_array = np.array(global_y_array)
+
 	source_ids = np.array(source_ids, dtype='int')
 	ap_rad = np.array(ap_rad)
 	night_to_nights = np.array(night_to_nights)
@@ -478,15 +541,18 @@ def main(raw_args=None):
 	print(f'{len(rp_mags)} sources after contamination cuts.')
 
 	# fig, ax = plt.subplots(1,3,figsize=(20,8), gridspec_kw={'width_ratios':[1,2,1]})
-	fig = plt.figure(figsize=(15,10))
-	gs = GridSpec(3, 3, width_ratios=[3,1,0.5], height_ratios=[1.5,1,0.5])
+	fig = plt.figure(figsize=(19,12))
+	gs = GridSpec(6, 3, width_ratios=[3,1,0.5], height_ratios=[1.5,1.5,0.5,0.5,0.5,0.5])
 	ax1 = fig.add_subplot(gs[0,0])
 	ax2 = fig.add_subplot(gs[1,:])
 	ax3 = fig.add_subplot(gs[0,1])
 	ax4 = fig.add_subplot(gs[0,2])
-	ax5 = fig.add_subplot(gs[2,:])
+	ax5 = fig.add_subplot(gs[2,:], sharex=ax2)
+	ax6 = fig.add_subplot(gs[3,:], sharex=ax2)
+	ax7 = fig.add_subplot(gs[4,:], sharex=ax2)
+	ax8 = fig.add_subplot(gs[5,:], sharex=ax2)
 
-	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4', ax5:'ax5'}
+	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4', ax5:'ax5', ax6:'ax6', ax7:'ax7', ax8:'ax8'}
 	
 	# ig.canvas.mpl_connect('motion_notify_event', on_plot_hover)
 	global highlight
@@ -525,7 +591,6 @@ def main(raw_args=None):
 	ax1.tick_params(labelsize=12)
 	ax2.set_ylabel('Normalized Flux', fontsize=14)
 	ax2.tick_params(labelsize=12)
-	ax2.set_xlabel('BJD TDB', fontsize=14)
 	ax2.grid()
 
 	ax3.imshow(source_image, origin='lower', norm=simple_norm(source_image, min_percent=1, max_percent=99))
@@ -543,6 +608,24 @@ def main(raw_args=None):
 	ax4.set_aspect('equal')
 	ax4.set_xlabel('Bp-Rp', fontsize=14)
 	ax4.set_ylabel('G', fontsize=14)
+
+	# plot airmass 
+	ax5.plot(global_ancillary_data['BJD TDB']-x_offset, global_ancillary_data['Airmass'], marker='.', ls='')
+	ax5.set_ylabel('Airmass')
+
+	# plot sky background 
+	ax6.set_ylabel('Sky (ADU/s)')
+
+	# plot x/y positions
+	ax7.set_ylabel('Pos. (pix)')
+
+	# plot fwhm 
+	ax8.plot(global_ancillary_data['BJD TDB']-x_offset, global_ancillary_data['FWHM X'], marker='.', ls='', label='Major axis', color='tab:pink')
+	ax8.plot(global_ancillary_data['BJD TDB']-x_offset, global_ancillary_data['FWHM Y'], marker='.', ls='', label='Minor axis', color='tab:purple')
+	ax8.legend()
+	ax8.set_ylabel('FWHM (")')
+
+	fig.axes[-1].set_xlabel('BJD TDB', fontsize=14)
 
 	plt.tight_layout()
 
