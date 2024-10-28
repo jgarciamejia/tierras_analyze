@@ -501,7 +501,21 @@ def main(raw_args=None):
 			interp_inds = np.where(interp_mask[i][j])[0]
 			for k in range(len(interp_inds)):
 				# replace with median of preceeding and following flux measurements? 
-				norm_flux[i][j][interp_inds[k]] = np.nanmedian([norm_flux[i][j-1][interp_inds[k]], norm_flux[i][j+1][interp_inds[k]]])				
+				# handle edge cases: if it's the last exposure that's bad, use the previous 2 measurements
+				if j == n_ims - 1:
+					ind_1 = j-2 
+					ind_2 = j-1 
+				elif j == 0:
+					# if it's the first exposure, use exposures 1 and 2 
+					ind_1 = 1
+					ind_2 = 2
+				else:
+					# otherwise, use the two neighboring points 
+					ind_1 = j - 1 
+					ind_2 = j + 1
+					
+				norm_flux[i][j][interp_inds[k]] = np.nanmedian([norm_flux[i][ind_1][interp_inds[k]], norm_flux[i][ind_2][interp_inds[k]]])			
+				
 				# update the raw flux with the interpolated value 
 				flux[i][j][interp_inds[k]] = norm_flux[i][j][interp_inds[k]] * norm_factors[i][interp_inds[k]]
 		#ax[1].plot(times, norm_flux[i], marker='+')	
