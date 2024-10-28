@@ -479,13 +479,14 @@ def main(raw_args=None):
 
 	# fig, ax = plt.subplots(1,3,figsize=(20,8), gridspec_kw={'width_ratios':[1,2,1]})
 	fig = plt.figure(figsize=(15,10))
-	gs = GridSpec(2, 3, width_ratios=[3,1,0.5], height_ratios=[1.5,1])
+	gs = GridSpec(3, 3, width_ratios=[3,1,0.5], height_ratios=[1.5,1,0.5])
 	ax1 = fig.add_subplot(gs[0,0])
 	ax2 = fig.add_subplot(gs[1,:])
 	ax3 = fig.add_subplot(gs[0,1])
 	ax4 = fig.add_subplot(gs[0,2])
+	ax5 = fig.add_subplot(gs[2,:])
 
-	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
+	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4', ax5:'ax5'}
 	
 	# ig.canvas.mpl_connect('motion_notify_event', on_plot_hover)
 	global highlight

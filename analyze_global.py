@@ -220,7 +220,6 @@ def main(raw_args=None):
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
-	
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
@@ -479,6 +478,29 @@ def main(raw_args=None):
 
 		start = stop
 	print(f'Read-in: {time.time()-t1}')
+
+	# identify and interpolate outliers in normalized flux 
+	norm_factors = np.nanmedian(flux, axis=1)
+	norm_flux = np.array([flux[i]/norm_factors[i] for i in range(len(flux))])
+	med = np.nanmedian(norm_flux, axis=2)
+	std = np.nanstd(norm_flux, axis=2)
+	interp_mask = np.zeros_like(saturated_flags)
+	print('Identifying and interpolating flux outliers...')
+	for i in range(len(flux)):
+		print(f'Photometry file {i+1} of {len(flux)}')
+
+		#fig, ax = plt.subplots(2, 1, figsize=(12,8), sharex=True)
+		#ax[0].plot(times, norm_flux[i], marker='+')
+		for j in range(len(flux[i])):
+			interp_mask[i][j] = sigma_clip(norm_flux[i][j], sigma=8).mask
+			interp_inds = np.where(interp_mask[i][j])[0]
+			for k in range(len(interp_inds)):
+				# replace with median of preceeding and following flux measurements? 
+				norm_flux[i][j][interp_inds[k]] = np.nanmedian([norm_flux[i][j-1][interp_inds[k]], norm_flux[i][j+1][interp_inds[k]]])				
+				# update the raw flux with the interpolated value 
+				flux[i][j][interp_inds[k]] = norm_flux[i][j][interp_inds[k]] * norm_factors[i][interp_inds[k]]
+		#ax[1].plot(times, norm_flux[i], marker='+')	
+		#breakpoint() 
 
 	x_offset = int(np.floor(times[0]))
 	times -= x_offset
@@ -779,229 +801,229 @@ def main(raw_args=None):
 			#	breakpoint() 
 			# do a plot if this is the tierras target 
 
-			if plot:
-				plt.ioff()
+			# if plot:
+			# 	plt.ioff()
 
-				use_inds = ~np.isnan(best_corr_flux)
+			# 	use_inds = ~np.isnan(best_corr_flux)
 
-				# raw_flux = flux[best_phot_file,:,tt]
+			# 	# raw_flux = flux[best_phot_file,:,tt]
 
-				v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
-				use_inds = np.where((best_corr_flux>l)&(best_corr_flux<h))[0]
+			# 	v, l, h = sigmaclip(best_corr_flux[~np.isnan(best_corr_flux)])
+			# 	use_inds = np.where((best_corr_flux>l)&(best_corr_flux<h))[0]
 
-				fig = plt.figure(figsize=(24/6*len(date_list), 20))	
-				gs = gridspec.GridSpec(8,len(date_list),height_ratios=[2,2,1,1,1,1,1,2], figure=fig)
+			# 	fig = plt.figure(figsize=(24/6*len(date_list), 20))	
+			# 	gs = gridspec.GridSpec(8,len(date_list),height_ratios=[2,2,1,1,1,1,1,2], figure=fig)
 
-				ax1 = fig.add_subplot(gs[0,:]) # linear time light curve 					
+			# 	ax1 = fig.add_subplot(gs[0,:]) # linear time light curve 					
 
-				# times -= x_offset
+			# 	# times -= x_offset
 
-				ax1.plot(times[use_inds], best_corr_flux[use_inds], marker='.', color='#b0b0b0', ls='')
-				ax1.set_ylabel('Corr. Flux', fontsize=14)
-				ax1.set_xlabel(f'BJD - {x_offset:.0f}', fontsize=14)
-				ax1.set_xlim(times[use_inds[0]]-1/24, times[use_inds[-1]]+1/24)
+			# 	ax1.plot(times[use_inds], best_corr_flux[use_inds], marker='.', color='#b0b0b0', ls='')
+			# 	ax1.set_ylabel('Corr. Flux', fontsize=14)
+			# 	ax1.set_xlabel(f'BJD - {x_offset:.0f}', fontsize=14)
+			# 	ax1.set_xlim(times[use_inds[0]]-1/24, times[use_inds[-1]]+1/24)
 
-				for i in range(len(date_list)):
-					use_inds_night = np.where((times >= times_list[i][0]) & (times <= times_list[i][-1]))[0]
+			# 	for i in range(len(date_list)):
+			# 		use_inds_night = np.where((times >= times_list[i][0]) & (times <= times_list[i][-1]))[0]
 					
-					if len(date_list) == 1:
-						ax2 = fig.add_subplot(gs[1]) 
-						ax3 = fig.add_subplot(gs[2])
-						ax4 = fig.add_subplot(gs[3])
-						ax5 = fig.add_subplot(gs[4])
-						ax6 = fig.add_subplot(gs[5])
-						ax7 = fig.add_subplot(gs[6])
-						ax8 = fig.add_subplot(gs[7])
-					else:
-						ax2 = fig.add_subplot(gs[1,i])
-						ax3 = fig.add_subplot(gs[2,i])
-						ax4 = fig.add_subplot(gs[3,i])
-						ax5 = fig.add_subplot(gs[4,i])
-						ax6 = fig.add_subplot(gs[5,i])
-						ax7 = fig.add_subplot(gs[6,i])
-						ax8 = fig.add_subplot(gs[7,i])
+			# 		if len(date_list) == 1:
+			# 			ax2 = fig.add_subplot(gs[1]) 
+			# 			ax3 = fig.add_subplot(gs[2])
+			# 			ax4 = fig.add_subplot(gs[3])
+			# 			ax5 = fig.add_subplot(gs[4])
+			# 			ax6 = fig.add_subplot(gs[5])
+			# 			ax7 = fig.add_subplot(gs[6])
+			# 			ax8 = fig.add_subplot(gs[7])
+			# 		else:
+			# 			ax2 = fig.add_subplot(gs[1,i])
+			# 			ax3 = fig.add_subplot(gs[2,i])
+			# 			ax4 = fig.add_subplot(gs[3,i])
+			# 			ax5 = fig.add_subplot(gs[4,i])
+			# 			ax6 = fig.add_subplot(gs[5,i])
+			# 			ax7 = fig.add_subplot(gs[6,i])
+			# 			ax8 = fig.add_subplot(gs[7,i])
 
-
-					
-					try:
-						allen_inds = np.where((times>=times_list[i][0])&(times<=times_list[i][-1]))[0]
-					except:
-						continue
-
-					ax2.set_title(date_list[i].split('/')[4], fontsize=14)
-					# ax[0].plot(times[use_inds], raw_flux[use_inds]/np.nanmedian(raw_flux[use_inds]), 'k.', label='Target')
-					# ax[0].plot(times[use_inds], best_alc[use_inds]/np.nanmedian(best_alc[use_inds]), 'r.', label='ALC')
 
 					
-					ax2.errorbar(times[use_inds], best_corr_flux[use_inds], best_corr_flux_err[use_inds], marker='.', color='#b0b0b0', ls='')
+			# 		try:
+			# 			allen_inds = np.where((times>=times_list[i][0])&(times<=times_list[i][-1]))[0]
+			# 		except:
+			# 			continue
 
-					# plot nightly median 
-					night_times = times[use_inds_night]
-					night_flux = best_corr_flux[use_inds_night]
-					nan_inds = ~np.isnan(night_flux)
-					night_times = night_times[nan_inds]
-					night_flux = night_flux[nan_inds]
-					v, l, h = sigmaclip(night_flux)
-					night_inds = np.where((night_flux > l) & (night_flux < h))[0]
+			# 		ax2.set_title(date_list[i].split('/')[4], fontsize=14)
+			# 		# ax[0].plot(times[use_inds], raw_flux[use_inds]/np.nanmedian(raw_flux[use_inds]), 'k.', label='Target')
+			# 		# ax[0].plot(times[use_inds], best_alc[use_inds]/np.nanmedian(best_alc[use_inds]), 'r.', label='ALC')
 
-					ax1.errorbar(np.nanmedian(night_times[night_inds]), np.nanmean(night_flux[night_inds]), 1.2533*np.nanstd(night_flux[night_inds])/np.sqrt(len(night_inds)), marker='o', color='k', ecolor='k', zorder=4, ls='')
-
-					ax2.errorbar(np.nanmedian(night_times[night_inds]), np.nanmean(night_flux[night_inds]), 1.2533*np.nanstd(night_flux[night_inds])/np.sqrt(len(night_inds)), marker='o', color='k', ecolor='k', zorder=4, ls='')
-
-					ax3.plot(times, airmasses, marker='.', ls='')	
-					# ax_ha = ax[2].twinx()
-					# ax_ha.plot(times, ha, color='tab:orange')
-
-					ax4.plot(times, sky[:,0]/exposure_times, color='tab:cyan', marker='.', ls='')
-
-					ax5.plot(times, x[:,0]-np.nanmedian(x[:,0]), color='tab:green',label='X-med(X)', marker='.', ls='')
-					ax5.plot(times, y[:,0]-np.nanmedian(y[:,0]), color='tab:red',label='Y-med(Y)', marker='.', ls='')
-					ax5.set_ylim(-15,15)
-
-					ax6.plot(times, fwhm_x, color='tab:pink', label='X', marker='.', ls='')
-					ax6.plot(times, fwhm_y, color='tab:purple',label='Y', marker='.', ls='')	
 					
-					ax7.plot(times, humidity, color='tab:brown', marker='.', ls='')
-					
-					bins, std, theo = allen_deviation(times[allen_inds], best_corr_flux[allen_inds], best_corr_flux_err[allen_inds])
+			# 		ax2.errorbar(times[use_inds], best_corr_flux[use_inds], best_corr_flux_err[use_inds], marker='.', color='#b0b0b0', ls='')
 
-					ax8.plot(bins, std*1e6, lw=2,label='Measured', marker='.')
-					ax8.plot(bins, theo*1e6,lw=2,label='Theoretical', marker='.')
-					ax8.set_yscale('log')
-					ax8.set_xscale('log')
+			# 		# plot nightly median 
+			# 		night_times = times[use_inds_night]
+			# 		night_flux = best_corr_flux[use_inds_night]
+			# 		nan_inds = ~np.isnan(night_flux)
+			# 		night_times = night_times[nan_inds]
+			# 		night_flux = night_flux[nan_inds]
+			# 		v, l, h = sigmaclip(night_flux)
+			# 		night_inds = np.where((night_flux > l) & (night_flux < h))[0]
+
+			# 		ax1.errorbar(np.nanmedian(night_times[night_inds]), np.nanmean(night_flux[night_inds]), 1.2533*np.nanstd(night_flux[night_inds])/np.sqrt(len(night_inds)), marker='o', color='k', ecolor='k', zorder=4, ls='')
+
+			# 		ax2.errorbar(np.nanmedian(night_times[night_inds]), np.nanmean(night_flux[night_inds]), 1.2533*np.nanstd(night_flux[night_inds])/np.sqrt(len(night_inds)), marker='o', color='k', ecolor='k', zorder=4, ls='')
+
+			# 		ax3.plot(times, airmasses, marker='.', ls='')	
+			# 		# ax_ha = ax[2].twinx()
+			# 		# ax_ha.plot(times, ha, color='tab:orange')
+
+			# 		ax4.plot(times, sky[:,0]/exposure_times, color='tab:cyan', marker='.', ls='')
+
+			# 		ax5.plot(times, x[:,0]-np.nanmedian(x[:,0]), color='tab:green',label='X-med(X)', marker='.', ls='')
+			# 		ax5.plot(times, y[:,0]-np.nanmedian(y[:,0]), color='tab:red',label='Y-med(Y)', marker='.', ls='')
+			# 		ax5.set_ylim(-15,15)
+
+			# 		ax6.plot(times, fwhm_x, color='tab:pink', label='X', marker='.', ls='')
+			# 		ax6.plot(times, fwhm_y, color='tab:purple',label='Y', marker='.', ls='')	
+					
+			# 		ax7.plot(times, humidity, color='tab:brown', marker='.', ls='')
+					
+			# 		bins, std, theo = allen_deviation(times[allen_inds], best_corr_flux[allen_inds], best_corr_flux_err[allen_inds])
+
+			# 		ax8.plot(bins, std*1e6, lw=2,label='Measured', marker='.')
+			# 		ax8.plot(bins, theo*1e6,lw=2,label='Theoretical', marker='.')
+			# 		ax8.set_yscale('log')
+			# 		ax8.set_xscale('log')
 				
-					if i == 0:
-						ax2.set_ylabel('Corr. Flux', fontsize=14)
-						ax3.set_ylabel('Airmass', fontsize=14)
-						ax4.set_ylabel('Sky\n(ADU/s)', fontsize=14)
-						ax5.set_ylabel('Pos.\n(pix.)', fontsize=14)
-						ax6.set_ylabel('FWHM\n(")', fontsize=14)
-						ax7.set_ylabel('Dome Humid.\n(%)',fontsize=14)
-						ax8.set_ylabel('$\sigma$ (ppm)', fontsize=14)
+			# 		if i == 0:
+			# 			ax2.set_ylabel('Corr. Flux', fontsize=14)
+			# 			ax3.set_ylabel('Airmass', fontsize=14)
+			# 			ax4.set_ylabel('Sky\n(ADU/s)', fontsize=14)
+			# 			ax5.set_ylabel('Pos.\n(pix.)', fontsize=14)
+			# 			ax6.set_ylabel('FWHM\n(")', fontsize=14)
+			# 			ax7.set_ylabel('Dome Humid.\n(%)',fontsize=14)
+			# 			ax8.set_ylabel('$\sigma$ (ppm)', fontsize=14)
 
-					ax2.set_xlim(times_list[i][0], times_list[i][0]+x_range)
-					ax3.set_xlim(times_list[i][0], times_list[i][0]+x_range)
-					ax4.set_xlim(times_list[i][0], times_list[i][0]+x_range)
-					ax5.set_xlim(times_list[i][0], times_list[i][0]+x_range)
-					ax6.set_xlim(times_list[i][0], times_list[i][0]+x_range)
-					ax7.set_xlim(times_list[i][0], times_list[i][0]+x_range)
+			# 		ax2.set_xlim(times_list[i][0], times_list[i][0]+x_range)
+			# 		ax3.set_xlim(times_list[i][0], times_list[i][0]+x_range)
+			# 		ax4.set_xlim(times_list[i][0], times_list[i][0]+x_range)
+			# 		ax5.set_xlim(times_list[i][0], times_list[i][0]+x_range)
+			# 		ax6.set_xlim(times_list[i][0], times_list[i][0]+x_range)
+			# 		ax7.set_xlim(times_list[i][0], times_list[i][0]+x_range)
 
-					ax2.grid(alpha=0.7)
-					ax3.grid(alpha=0.7)
-					ax4.grid(alpha=0.7)
-					ax5.grid(alpha=0.7)
-					ax6.grid(alpha=0.7)
-					ax7.grid(alpha=0.7)
-					ax8.grid(alpha=0.7)
+			# 		ax2.grid(alpha=0.7)
+			# 		ax3.grid(alpha=0.7)
+			# 		ax4.grid(alpha=0.7)
+			# 		ax5.grid(alpha=0.7)
+			# 		ax6.grid(alpha=0.7)
+			# 		ax7.grid(alpha=0.7)
+			# 		ax8.grid(alpha=0.7)
 
-					ax2.tick_params(labelsize=12, labelbottom=False)
-					ax3.tick_params(labelsize=12, labelbottom=False)
-					ax4.tick_params(labelsize=12, labelbottom=False)
-					ax5.tick_params(labelsize=12, labelbottom=False)
-					ax6.tick_params(labelsize=12, labelbottom=False)
-					ax7.tick_params(labelsize=12)
-					ax8.tick_params(labelsize=12)
+			# 		ax2.tick_params(labelsize=12, labelbottom=False)
+			# 		ax3.tick_params(labelsize=12, labelbottom=False)
+			# 		ax4.tick_params(labelsize=12, labelbottom=False)
+			# 		ax5.tick_params(labelsize=12, labelbottom=False)
+			# 		ax6.tick_params(labelsize=12, labelbottom=False)
+			# 		ax7.tick_params(labelsize=12)
+			# 		ax8.tick_params(labelsize=12)
 
-					if i > 0 and len(date_list) != 1:
-						ax2.spines['left'].set_visible(False)
-						ax3.spines['left'].set_visible(False)
-						ax4.spines['left'].set_visible(False)
-						ax5.spines['left'].set_visible(False)
-						ax6.spines['left'].set_visible(False)
-						ax7.spines['left'].set_visible(False)
-						ax8.spines['left'].set_visible(False)
+			# 		if i > 0 and len(date_list) != 1:
+			# 			ax2.spines['left'].set_visible(False)
+			# 			ax3.spines['left'].set_visible(False)
+			# 			ax4.spines['left'].set_visible(False)
+			# 			ax5.spines['left'].set_visible(False)
+			# 			ax6.spines['left'].set_visible(False)
+			# 			ax7.spines['left'].set_visible(False)
+			# 			ax8.spines['left'].set_visible(False)
 
-						ax2.tick_params(labelleft=False)
-						ax3.tick_params(labelleft=False)
-						ax4.tick_params(labelleft=False)
-						ax5.tick_params(labelleft=False)
-						ax6.tick_params(labelleft=False)
-						ax7.tick_params(labelleft=False)
-						ax8.tick_params(labelleft=False)
+			# 			ax2.tick_params(labelleft=False)
+			# 			ax3.tick_params(labelleft=False)
+			# 			ax4.tick_params(labelleft=False)
+			# 			ax5.tick_params(labelleft=False)
+			# 			ax6.tick_params(labelleft=False)
+			# 			ax7.tick_params(labelleft=False)
+			# 			ax8.tick_params(labelleft=False)
 
-						ax2.yaxis.tick_left()
-						ax3.yaxis.tick_left()
-						ax4.yaxis.tick_left()
-						ax5.yaxis.tick_left()
-						ax6.yaxis.tick_left()
-						ax7.yaxis.tick_left()
-						ax8.yaxis.tick_left()
+			# 			ax2.yaxis.tick_left()
+			# 			ax3.yaxis.tick_left()
+			# 			ax4.yaxis.tick_left()
+			# 			ax5.yaxis.tick_left()
+			# 			ax6.yaxis.tick_left()
+			# 			ax7.yaxis.tick_left()
+			# 			ax8.yaxis.tick_left()
 
-					if i < len(date_list) - 1:
-						ax2.spines['right'].set_visible(False)
-						ax3.spines['right'].set_visible(False)
-						ax4.spines['right'].set_visible(False)
-						ax5.spines['right'].set_visible(False)
-						ax6.spines['right'].set_visible(False)
-						ax7.spines['right'].set_visible(False)
-						ax8.spines['right'].set_visible(False)
+			# 		if i < len(date_list) - 1:
+			# 			ax2.spines['right'].set_visible(False)
+			# 			ax3.spines['right'].set_visible(False)
+			# 			ax4.spines['right'].set_visible(False)
+			# 			ax5.spines['right'].set_visible(False)
+			# 			ax6.spines['right'].set_visible(False)
+			# 			ax7.spines['right'].set_visible(False)
+			# 			ax8.spines['right'].set_visible(False)
 					
-						ax2.yaxis.tick_right()
-						ax3.yaxis.tick_right()
-						ax4.yaxis.tick_right()
-						ax5.yaxis.tick_right()
-						ax6.yaxis.tick_right()
-						ax7.yaxis.tick_right()
-						ax8.yaxis.tick_right()
+			# 			ax2.yaxis.tick_right()
+			# 			ax3.yaxis.tick_right()
+			# 			ax4.yaxis.tick_right()
+			# 			ax5.yaxis.tick_right()
+			# 			ax6.yaxis.tick_right()
+			# 			ax7.yaxis.tick_right()
+			# 			ax8.yaxis.tick_right()
 					
-					if i == 0:
-						ax2.yaxis.tick_left()
-						ax3.yaxis.tick_left()
-						ax4.yaxis.tick_left()
-						ax5.yaxis.tick_left()
-						ax6.yaxis.tick_left()
-						ax7.yaxis.tick_left()
-						ax8.yaxis.tick_left()
+			# 		if i == 0:
+			# 			ax2.yaxis.tick_left()
+			# 			ax3.yaxis.tick_left()
+			# 			ax4.yaxis.tick_left()
+			# 			ax5.yaxis.tick_left()
+			# 			ax6.yaxis.tick_left()
+			# 			ax7.yaxis.tick_left()
+			# 			ax8.yaxis.tick_left()
 					
-					if i == len(date_list) - 1:
-						ax2.yaxis.tick_right()
-						ax3.yaxis.tick_right()
-						ax4.yaxis.tick_right()
-						ax5.yaxis.tick_right()
-						ax6.yaxis.tick_right()
-						ax7.yaxis.tick_right()
-						ax8.yaxis.tick_right()
+			# 		if i == len(date_list) - 1:
+			# 			ax2.yaxis.tick_right()
+			# 			ax3.yaxis.tick_right()
+			# 			ax4.yaxis.tick_right()
+			# 			ax5.yaxis.tick_right()
+			# 			ax6.yaxis.tick_right()
+			# 			ax7.yaxis.tick_right()
+			# 			ax8.yaxis.tick_right()
 
-						ax2.tick_params(labelright=True)
-						ax3.tick_params(labelright=True)
-						ax4.tick_params(labelright=True)
-						ax5.tick_params(labelright=True)
-						ax6.tick_params(labelright=True)
-						ax7.tick_params(labelright=True)
-						ax8.tick_params(labelright=True)
+			# 			ax2.tick_params(labelright=True)
+			# 			ax3.tick_params(labelright=True)
+			# 			ax4.tick_params(labelright=True)
+			# 			ax5.tick_params(labelright=True)
+			# 			ax6.tick_params(labelright=True)
+			# 			ax7.tick_params(labelright=True)
+			# 			ax8.tick_params(labelright=True)
 
-						ax5.legend()
-						ax6.legend()
+			# 			ax5.legend()
+			# 			ax6.legend()
 					
-					ax7.set_xlabel(f'BJD - {x_offset:.0f}', fontsize=14)
-					ax7.tick_params(labelbottom=True)
+			# 		ax7.set_xlabel(f'BJD - {x_offset:.0f}', fontsize=14)
+			# 		ax7.tick_params(labelbottom=True)
 
-					ax8.set_xlabel('Bin size', fontsize=14)	
-					ax8.xaxis.set_major_formatter(ScalarFormatter())
+			# 		ax8.set_xlabel('Bin size', fontsize=14)	
+			# 		ax8.xaxis.set_major_formatter(ScalarFormatter())
 				
-				# plt.suptitle(target, fontsize=14)
-				plt.subplots_adjust(hspace=0.1,wspace=0.05,left=0.05,right=0.92,bottom=0.05,top=0.92)
-				plt.tight_layout()
+			# 	# plt.suptitle(target, fontsize=14)
+			# 	plt.subplots_adjust(hspace=0.1,wspace=0.05,left=0.05,right=0.92,bottom=0.05,top=0.92)
+			# 	plt.tight_layout()
 				
 				
 
-				output_path = Path(f'/data/tierras/fields/{field}/sources/plots/')
-				if not os.path.exists(output_path):
-					os.mkdir(output_path)
-					set_tierras_permissions(output_path)
-				plt.savefig(output_path/f'{med_std_over_theo:.2f}_{target}_global_summary.png', dpi=200)
-				set_tierras_permissions(output_path/f'{med_std_over_theo:.2f}_{target}_global_summary.png')
-				plt.close()
-				plt.ion()
+			# 	output_path = Path(f'/data/tierras/fields/{field}/sources/plots/')
+			# 	if not os.path.exists(output_path):
+			# 		os.mkdir(output_path)
+			# 		set_tierras_permissions(output_path)
+			# 	plt.savefig(output_path/f'{med_std_over_theo:.2f}_{target}_global_summary.png', dpi=200)
+			# 	set_tierras_permissions(output_path/f'{med_std_over_theo:.2f}_{target}_global_summary.png')
+			# 	plt.close()
+			# 	plt.ion()
 
-				if email: 
-					# Send summary plots 
-					subject = f'[Tierras]_Data_Analysis_Report:{date}_{field}'
-					summary_path = f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_summary.png'
-					lc_path = f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_lc.png' 
-					append = '{} {}'.format(summary_path,lc_path)
-					emails = 'juliana.garcia-mejia@cfa.harvard.edu patrick.tamburo@cfa.harvard.edu'
-					os.system('echo | mutt {} -s {} -a {}'.format(emails,subject,append))
+			# 	if email: 
+			# 		# Send summary plots 
+			# 		subject = f'[Tierras]_Data_Analysis_Report:{date}_{field}'
+			# 		summary_path = f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_summary.png'
+			# 		lc_path = f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_lc.png' 
+			# 		append = '{} {}'.format(summary_path,lc_path)
+			# 		emails = 'juliana.garcia-mejia@cfa.harvard.edu patrick.tamburo@cfa.harvard.edu'
+			# 		os.system('echo | mutt {} -s {} -a {}'.format(emails,subject,append))
 
 			# write out the best light curve 
 			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Airmass':airmasses, 'FWHM':fwhm_x}
