@@ -395,7 +395,7 @@ def main(raw_args=None):
 	times = np.zeros(n_ims, dtype='float64')
 	airmasses = np.zeros(n_ims, dtype='float16')
 	exposure_times = np.zeros(n_ims, dtype='float16')
-	filenames = np.zeros(n_ims, dtype='str')
+	filenames = np.empty(n_ims, dtype=object)
 	ha = np.zeros(n_ims, dtype='float16')
 	humidity = np.zeros(n_ims, dtype='float16')
 	fwhm_x = np.zeros(n_ims, dtype='float16')
@@ -478,6 +478,11 @@ def main(raw_args=None):
 
 		start = stop
 	print(f'Read-in: {time.time()-t1}')
+
+	# write out a global ancillary .csv 
+	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
+	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])
+	global_ancillary_data.to_csv(global_ancillary_path, index=0)
 
 	# identify and interpolate outliers in normalized flux 
 	norm_factors = np.nanmedian(flux, axis=1)
