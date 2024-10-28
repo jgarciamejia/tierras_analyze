@@ -520,7 +520,11 @@ def main(raw_args=None):
 	flux_inds = np.where(median_flux < 0.8)[0]
 	flux_mask[flux_inds] = 1
 	
-	
+	# also mask on x/y pixel positions; we don't want images with large position excursions
+	pos_mask = np.zeros(len(fwhm_x), dtype='int')
+	pos_inds = np.where((abs(x_deviations) > 20) | (abs(y_deviations) > 20))[0]
+	pos_mask[pos_inds] = 1 
+
 	# optionally restrict to SAME 
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
 	if same: 
@@ -569,7 +573,7 @@ def main(raw_args=None):
 		times_list = np.delete(times_list, dates_to_remove)
 		night_inds_list = np.delete(night_inds_list, dates_to_remove)
 	
-	mask = (same_mask == 1) | (flux_mask == 1) | (wcs_flags == 1)
+	mask = (same_mask == 1) | (flux_mask == 1) | (wcs_flags == 1) | (pos_mask == 1)
 	airmasses[mask] = np.nan
 	exposure_times[mask] = np.nan
 	filenames[mask] = np.nan
@@ -1031,7 +1035,7 @@ def main(raw_args=None):
 			# 		os.system('echo | mutt {} -s {} -a {}'.format(emails,subject,append))
 
 			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Airmass':airmasses, 'FWHM':fwhm_x}
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt]}
 			
 			if ap_rad is not None:
 				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
