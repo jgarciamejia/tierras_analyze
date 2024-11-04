@@ -17,11 +17,14 @@ from internight_precision_interactive import gaia_query
 from photutils.aperture import CircularAperture, aperture_photometry 
 from astropy.modeling.functional_models import Gaussian2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.widgets import CheckButtons
 
 def main(raw_args=None):
 
 	def on_click(event):
 		global highlight 
+		global currently_selected_source
+
 		# print(event.inaxes)
 		ax = event.inaxes
 		if ax is not None:
@@ -30,6 +33,8 @@ def main(raw_args=None):
 			return
 
 		if label == 'ax1':
+			if check_all.get_status()[0] is False:
+				check_all.set_active(0) # set the quality flag check box to True if it is not already; by default, we plot newly selected targets with all quality flags enabled
 			x_click = event.xdata
 			y_click = event.ydata
 			dists = ((rp_mags - x_click)**2+(np.log10(night_to_nights) - np.log10(y_click))**2)**0.5
@@ -40,18 +45,59 @@ def main(raw_args=None):
 		elif label == 'ax2':
 			return
 		elif label == 'ax3':
+			if check_all.get_status()[0] is False:
+				check_all.set_active(0) # set the quality flag check box to True if it is not already; by default, we plot newly selected targets with all quality flags enabled
 			x_click = event.xdata
 			y_click = event.ydata
 			dists = ((x_pos - x_click)**2+(y_pos- y_click)**2)**0.5
 			point = np.argmin(dists)
 		elif label == 'ax4':
+			if check_all.get_status()[0] is False:
+				check_all.set_active(0) # set the quality flag check box to True if it is not already; by default, we plot newly selected targets with all quality flags enabled
 			x_click = event.xdata
 			y_click = event.ydata
 			dists = ((bp_rp - x_click)**2+(G - y_click)**2)**0.5
 			point = np.nanargmin(dists)
 		else:
 			return
-		
+				
+		# all_mask = ~global_flux_flags[point] & ~global_wcs_flags[point] & ~global_position_flags[point] & ~global_fwhm_flags[point]
+		mask_is_checked = check_all.get_status()[0]
+		sc_is_checked = check_all.get_status()[1]
+
+		if mask_is_checked and not sc_is_checked:
+			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int))[0] 
+			print(all_mask)
+		elif sc_is_checked and not mask_is_checked:
+			nan_inds = ~np.isnan(flux_arr[point])
+			flux_ = flux_arr[point][nan_inds]
+			v, l, h = sigmaclip(flux_, 4, 4)
+			all_mask = (flux_arr[point] >= l) & (flux_arr[point] <= h)
+				
+		elif mask_is_checked and sc_is_checked:
+			# make a combined mask using all the quality flags and a sigma clipping mask
+			nan_inds = ~np.isnan(flux_arr[point])
+			flux_ = flux_arr[point][nan_inds]
+			v, l, h = sigmaclip(flux_, 4, 4)
+			sc_mask = (flux_arr[point] < l) | (flux_arr[point] > h)
+			print(sc_mask)
+			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
+		else:
+			all_mask = np.arange(len(flux_arr[point]))
+
+		# recompute night medians 
+		bx_ = np.zeros(len(night_medians))
+		by_ = np.zeros_like(bx_)
+		bye_ = np.zeros_like(bx_)
+		for j in range(len(night_medians)):				
+			times_night = times_list[j]
+			inds = np.where((times_arr[point][all_mask] >= times_night[0]) & (times_arr[point][all_mask] <= times_night[-1]))[0]
+			bx_[j] = np.nanmedian(times_arr[point][all_mask][inds])
+			by_[j] = np.nanmedian(flux_arr[point][all_mask][inds])
+			n_points = sum(~np.isnan(flux_arr[point][all_mask][inds]))
+			bye_[j] = np.nanstd(flux_arr[point][all_mask][inds]) / np.sqrt(n_points)
+
+
 		print(f'Clicked on {source_ids[point]}, sigma_n2n = {night_to_nights[point]*1e6:.0f}')
 		if highlight:
 			ax1.lines[-1].remove()
@@ -69,8 +115,8 @@ def main(raw_args=None):
 		ax2.cla()
 		# ax2.errorbar(times_save[point], flux_save[point], flux_err_save[point], marker='.', ls='', ecolor='#b0b0b0', color='#b0b0b0')
 		# ax2.errorbar(bin_times_save[point], bin_flux_save[point], bin_flux_err_save[point], marker='o', color='k', ecolor='k', mfc='none', zorder=3, mew=1.5, ms=7, ls='')
-		ax2.errorbar(times_arr[point], flux_arr[point], flux_err_arr[point], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='', label=source_ids[point])
-		ax2.errorbar(bx_arr[point], by_arr[point], bye_arr[point], marker='o', color='k', ls='', zorder=3)
+		ax2.errorbar(times_arr[point][all_mask], flux_arr[point][all_mask], flux_err_arr[point][all_mask], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='', label=source_ids[point])
+		ax2.errorbar(bx_, by_, bye_, marker='o', color='k', ls='', zorder=3)
 		ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
 		ax2.grid(alpha=0.5)
 		ax2.tick_params(labelsize=12)
@@ -95,17 +141,18 @@ def main(raw_args=None):
 		y_plot -= np.nanmedian(y_plot)
 
 		ax6.cla()
-		ax6.plot(times, sky_plot, marker='.', ls='', color='tab:cyan')
+		ax6.plot(times[all_mask], sky_plot[all_mask], marker='.', ls='', color='tab:cyan')
 		ax6.set_ylabel('Sky (ADU/s)')
 
 		ax7.cla()
-		ax7.plot(times, x_plot, marker='.', ls='', color='tab:green', label='X-med(X)')
-		ax7.plot(times, y_plot, marker='.', ls='', color='tab:red', label='Y-med(Y)')		
+		ax7.plot(times[all_mask], x_plot[all_mask], marker='.', ls='', color='tab:green', label='X-med(X)')
+		ax7.plot(times[all_mask], y_plot[all_mask], marker='.', ls='', color='tab:red', label='Y-med(Y)')		
 		ax7.legend()
 		ax7.set_ylabel('Pos (pix.)')
 
 		plt.subplots_adjust(hspace=0.35)
 
+		currently_selected_source = source_ids[point]
 
 	def on_click_2(event):
 		global highlight_2
@@ -191,6 +238,82 @@ def main(raw_args=None):
 		ax2_3.set_title(source_ids[point], fontsize=14)
 		return 
 	
+	def update_all_flag_visibility(label):
+		try:
+			point = np.where(source_ids == currently_selected_source)[0][0]
+		except:
+			print('No source selected!')
+			return 
+		
+
+		mask_is_checked = check_all.get_status()[0]
+		sc_is_checked = check_all.get_status()[1]
+
+		# if the box is checked, get the indices of the good exposures using the masks
+		if mask_is_checked and not sc_is_checked:
+			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int))[0] 
+			print(all_mask)
+		elif sc_is_checked and not mask_is_checked:
+			nan_inds = ~np.isnan(flux_arr[point])
+			flux_ = flux_arr[point][nan_inds]
+			v, l, h = sigmaclip(flux_, 4, 4)
+			all_mask = (flux_arr[point] >= l) & (flux_arr[point] <= h)
+				
+		elif mask_is_checked and sc_is_checked:
+			# make a combined mask using all the quality flags and a sigma clipping mask
+			nan_inds = ~np.isnan(flux_arr[point])
+			flux_ = flux_arr[point][nan_inds]
+			v, l, h = sigmaclip(flux_, 4, 4)
+			sc_mask = (flux_arr[point] < l) | (flux_arr[point] > h)
+			print(sc_mask)
+			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
+		else:
+			all_mask = np.arange(len(flux_arr[point]))
+
+		# recompute night medians 
+		bx_ = np.zeros(len(night_medians))
+		by_ = np.zeros_like(bx_)
+		bye_ = np.zeros_like(bx_)
+		for j in range(len(night_medians)):				
+			times_night = times_list[j]
+			inds = np.where((times_arr[point][all_mask] >= times_night[0]) & (times_arr[point][all_mask] <= times_night[-1]))[0]
+			bx_[j] = np.nanmedian(times_arr[point][all_mask][inds])
+			by_[j] = np.nanmedian(flux_arr[point][all_mask][inds])
+			n_points = sum(~np.isnan(flux_arr[point][all_mask][inds]))
+			bye_[j] = np.nanstd(flux_arr[point][all_mask][inds]) / np.sqrt(n_points)
+
+		ax2.cla()
+		
+		ax2.errorbar(times_arr[point][all_mask], flux_arr[point][all_mask], flux_err_arr[point][all_mask], marker='.', color='#b0b0b0', ecolor='#b0b0b0', ls='', label=source_ids[point])
+		ax2.errorbar(bx_, by_, bye_, marker='o', color='k', ls='', zorder=3)
+		ax2.axhline(1, ls='--', lw=2, color='k', alpha=0.7, zorder=0)
+		ax2.grid(alpha=0.5)
+		ax2.tick_params(labelsize=12)
+		ax2.set_ylabel('Normalized Flux', fontsize=14)
+		# ax2.set_title(source_ids[point], fontsize=14)
+		ax2.legend()
+		
+		print(f'sigma_n2n = {np.nanstd(by_)*1e6:.0f}')
+
+		ax6.cla()
+		ax6.plot(times_arr[point][all_mask], global_sky_array[point][all_mask], marker='.', ls='', color='tab:cyan')
+		ax6.set_ylabel('Sky (ADU/s)')
+
+		ax7.cla()
+		ax7.plot(times_arr[point][all_mask], global_x_array[point][all_mask], marker='.', ls='', color='tab:green', label='X-med(X)')
+		ax7.plot(times_arr[point][all_mask], global_y_array[point][all_mask], marker='.', ls='', color='tab:red', label='Y-med(Y)')		
+		ax7.legend()
+		ax7.set_ylabel('Pos (pix.)')
+
+		ax8.cla()
+		ax8.plot(global_ancillary_data['BJD TDB'][all_mask]-x_offset, global_ancillary_data['FWHM X'][all_mask], marker='.', ls='', label='Major axis', color='tab:pink')
+		ax8.plot(global_ancillary_data['BJD TDB'][all_mask]-x_offset, global_ancillary_data['FWHM Y'][all_mask], marker='.', ls='', label='Minor axis', color='tab:purple')
+		ax8.legend()
+		ax8.set_ylabel('FWHM (")')
+
+		return
+
+	
 	# set some constants
 	PLATE_SCALE = 0.432 # " pix^-1
 	contamination_limit = 0.1 
@@ -258,23 +381,6 @@ def main(raw_args=None):
 	x_offset = times[0]
 	times -= x_offset
 
-	# read in positions of sources in the reference image
-	# x_pos = np.zeros(len(lc_files))
-	# y_pos = np.zeros_like(x_pos)
-	# rp = np.zeros_like(x_pos)
-	# bp_rp = np.zeros_like(x_pos)
-	# G = np.zeros_like(x_pos)
-	# for i in range(len(lc_files)):
-	# 	try:
-	# 		source = int(lc_files[i].split('Gaia DR3 ')[1].split('_')[0])
-	# 	except:
-	# 		source = identify_target_gaia_id(str(source), source_df, x_pix=2048, y_pix=512)
-	# 	ind = np.where(source_df['source_id'] == source)[0][0]
-		
-	# 	# except:
-	# 	# 	x_pos[i] = np.nan
-	# 	# 	y_pos[i] = np.nan
-
 	weighted_ref_rp = []
 	weighted_ref_n2n = []
 	weighted_ref_bp_rp = []
@@ -319,7 +425,11 @@ def main(raw_args=None):
 	global_sky_array = []
 	global_x_array = []
 	global_y_array = []
-
+	global_flux_flags = []
+	global_wcs_flags = []
+	global_position_flags = []
+	global_fwhm_flags = []
+	
 	if cut_contaminated:	
 		images = get_flattened_files(date_list[0].split('/')[4], field, 'flat0000')
 		# we don't perform photometry on *every* source in the field, so to get an accurate estimate of the contamination for each source, we need to query gaia for all sources (i.e. with no Rp mag limit) so that their fluxes can be modeled
@@ -421,6 +531,16 @@ def main(raw_args=None):
 		night_medians = np.zeros(len(times_inds))
 		night_errs_on_meds = np.zeros(len(times_inds))
 
+		# read in flags as boolean arrays
+		global_flux_flags.append(np.array(df['Low Flux Flag']).astype(bool))
+		global_wcs_flags.append(np.array(df['WCS Flag']).astype(bool))
+		global_position_flags.append(np.array(df['Position Flag']).astype(bool))
+		global_fwhm_flags.append(np.array(df['FWHM Flag']).astype(bool))
+
+		# make mask for all flags; true = exposure is good, false = exposure is flagged
+		all_mask = ~global_flux_flags[i] & ~global_wcs_flags[i] & ~global_position_flags[i] & ~global_fwhm_flags[i]
+
+		# calculate the medians of each night 
 		sc_flux_arr = []
 		sc_times_arr = []
 		sc_flux_err_arr = []
@@ -428,61 +548,35 @@ def main(raw_args=None):
 		sc_by_arr = []
 		sc_bye_arr = []
 		for j in range(len(night_medians)):
-				
-			# TODO: outlier rejection 
-			# TODO: eliminate nans from sqrt(len(times_inds[j]))
-			night_times = np.array(times_list[j])
-			try:
-				night_flux = flux[times_inds[j]]
-			except:
-				breakpoint()
 			
-			calculated_night_err = calculated_flux_err[times_inds[j]]
-			nan_inds = ~np.isnan(night_flux)
+			night_times = np.array(times_list[j])
+			inds = np.where((times >= night_times[0]) & (times <= night_times[-1]))[0]
+			night_mask = all_mask[inds]
 
-			# night_times = night_times[nan_inds]
-			# night_flux = night_flux[nan_inds]
-			# calculated_night_err = calculated_night_err[nan_inds]
+			# inds = np.array([i for i in inds if i in all_mask])
+			night_flux = flux[inds]
 
-			v, l, h = sigmaclip(night_flux[nan_inds], 4, 4)
-			sc_inds = np.where((night_flux >= l) & (night_flux <= h))[0]
-			bad_sc_inds = np.where((night_flux < l) | (night_flux > h))[0]
-			# if len(bad_sc_inds) > 0:
-			# 	breakpoint()
+			non_masked_inds = np.array([i for i in inds if i in all_mask])
+			calculated_night_err = calculated_flux_err[inds][night_mask]
+			# nan_inds = ~np.isnan(night_flux)
 
-			night_times[bad_sc_inds] = np.nan 
-			night_flux[bad_sc_inds] = np.nan
-			calculated_night_err[bad_sc_inds] = np.nan
-			# sc_times = night_times 
-			# sc_flux = night_flux
-			# sc_err = calculated_night_err
-			# sc_times = night_times[sc_inds]
-			# sc_flux = night_flux[sc_inds]
-			# sc_err = calculated_night_err[sc_inds]
-			# breakpoint()
+			# v, l, h = sigmaclip(night_flux[nan_inds], 4, 4)
+			# sc_inds = np.where((night_flux >= l) & (night_flux <= h))[0]
+			# bad_sc_inds = np.where((night_flux < l) | (night_flux > h))[0]
 
-			# n_exp = sum(~np.isnan(sc_flux))
+			# night_times[bad_sc_inds] = np.nan 
+			# night_flux[bad_sc_inds] = np.nan
+			# calculated_night_err[bad_sc_inds] = np.nan
 
-			# measured_noise[j] = 1.2533*np.nanstd(sc_flux)/(n_exp**(1/2))
-			# night_medians[j] = np.nanmedian(sc_flux)
-			# night_errs_on_meds[j] = 1.2533*np.nanmedian(sc_err)/(n_exp**(1/2))
+			n_exp = sum(~np.isnan(night_flux[night_mask]))
 
-			# sc_times_arr.extend(sc_times)
-			# sc_flux_arr.extend(sc_flux)
-			# sc_flux_err_arr.extend(sc_err)
-			# sc_bx_arr.extend([np.nanmean(sc_times)])
-			# sc_by_arr.extend([np.nanmedian(sc_flux)])
-			# sc_bye_arr.extend([measured_noise[j]])
-
-			n_exp = sum(~np.isnan(night_flux))
-
-			measured_noise[j] = 1.2533*np.nanstd(night_flux)/(n_exp**(1/2))
-			night_medians[j] = np.nanmedian(night_flux)
+			measured_noise[j] = 1.2533*np.nanstd(night_flux[night_mask])/(n_exp**(1/2))
+			night_medians[j] = np.nanmedian(night_flux[night_mask])
 			night_errs_on_meds[j] = 1.2533*np.nanmedian(calculated_night_err)/(n_exp**(1/2))
 
 			sc_times_arr.extend(night_times)
 			sc_flux_arr.extend(night_flux)
-			sc_flux_err_arr.extend(calculated_night_err)
+			sc_flux_err_arr.extend(calculated_flux_err[inds])
 			sc_bx_arr.extend([np.nanmean(night_times)])
 			sc_by_arr.extend([np.nanmedian(night_flux)])
 			sc_bye_arr.extend([measured_noise[j]])
@@ -498,6 +592,7 @@ def main(raw_args=None):
 		global_sky_array.append(np.array(df['Sky Background (ADU/s)']))
 		global_x_array.append(np.array(df['X']))
 		global_y_array.append(np.array(df['Y']))
+		
 
 		n2n = np.nanstd(night_medians)
 		night_to_nights.append(n2n)
@@ -531,6 +626,9 @@ def main(raw_args=None):
 	global_sky_array = np.array(global_sky_array)
 	global_x_array = np.array(global_x_array)
 	global_y_array = np.array(global_y_array)
+	global_flux_flags = np.array(global_flux_flags)
+	global_wcs_flags = np.array(global_wcs_flags)
+	global_position_flags = np.array(global_position_flags)
 
 	source_ids = np.array(source_ids, dtype='int')
 	ap_rad = np.array(ap_rad)
@@ -542,7 +640,12 @@ def main(raw_args=None):
 
 	# fig, ax = plt.subplots(1,3,figsize=(20,8), gridspec_kw={'width_ratios':[1,2,1]})
 	fig = plt.figure(figsize=(19,12))
-	gs = GridSpec(6, 3, width_ratios=[3,1,0.5], height_ratios=[1.5,1.5,0.5,0.5,0.5,0.5])
+	gs = GridSpec(6, 4, width_ratios=[2,1,1,1], height_ratios=[1.5,1.5,0.5,0.5,0.5,0.5])
+
+	rax = plt.axes([0.85, 0.85, 0.1, 0.1])  # Position for the checkbox
+	check_all = CheckButtons(rax, ['All quality flags', 'Sigma clipping'], [True, False])
+	check_all.on_clicked(update_all_flag_visibility)
+
 	ax1 = fig.add_subplot(gs[0,0])
 	ax2 = fig.add_subplot(gs[1,:])
 	ax3 = fig.add_subplot(gs[0,1])
@@ -551,6 +654,9 @@ def main(raw_args=None):
 	ax6 = fig.add_subplot(gs[3,:], sharex=ax2)
 	ax7 = fig.add_subplot(gs[4,:], sharex=ax2)
 	ax8 = fig.add_subplot(gs[5,:], sharex=ax2)
+
+	global currently_selected_source
+	currently_selected_source = None
 
 	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4', ax5:'ax5', ax6:'ax6', ax7:'ax7', ax8:'ax8'}
 	
@@ -593,7 +699,7 @@ def main(raw_args=None):
 	ax2.tick_params(labelsize=12)
 	ax2.grid()
 
-	ax3.imshow(source_image, origin='lower', norm=simple_norm(source_image, min_percent=1, max_percent=99))
+	ax3.imshow(source_image, origin='lower', interpolation='none', norm=simple_norm(source_image, min_percent=1, max_percent=99))
 	for i in range(len(x_pos)):
 		ax3.plot(x_pos[i], y_pos[i], 'rx', gid=source_ids[i])
 	
