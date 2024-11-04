@@ -220,6 +220,7 @@ def main(raw_args=None):
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
+	
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
@@ -269,6 +270,7 @@ def main(raw_args=None):
 		targ_y_pix = hdr['CAT-Y']
 		tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix) 
 	except:
+		breakpoint()
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
 	if cut_contaminated:
@@ -487,15 +489,22 @@ def main(raw_args=None):
 	# identify and interpolate outliers in normalized flux 
 	norm_factors = np.nanmedian(flux, axis=1)
 	norm_flux = np.array([flux[i]/norm_factors[i] for i in range(len(flux))])
+	norm_errs = np.array([flux_err[i]/norm_factors[i] for i in range(len(flux))])
+	# alc_init = np.nanmedian(norm_flux, axis=2) # to identify flux outliers, construct a simple ALC using the median of all the normalized fluxes in each exposure
+	# corr_flux_init = np.transpose(np.array([norm_flux[:,:,i]/alc_init for i in range(n_sources)]), (1,2,0)) # correct the normalized fluxes by the initial alc; transposition ensures same shape as norm_flux
+
+	# #norm_errs = np.array([flux_err[i]/norm_factors[i] for i in range(len(flux))])
+	# z_scores = (corr_flux_init-1)/norm_errs
+
 	med = np.nanmedian(norm_flux, axis=2)
 	std = np.nanstd(norm_flux, axis=2)
 	interp_mask = np.zeros_like(saturated_flags)
 	print('Identifying and interpolating flux outliers...')
 	for i in range(len(flux)):
 		print(f'Photometry file {i+1} of {len(flux)}')
-
-		#fig, ax = plt.subplots(2, 1, figsize=(12,8), sharex=True)
-		#ax[0].plot(times, norm_flux[i], marker='+')
+		# fig, ax = plt.subplots(2, 1, figsize=(12,8), sharex=True)
+		# ax[0].plot(times, norm_flux[i], marker='+')
+		# breakpoint()
 		for j in range(len(flux[i])):
 			interp_mask[i][j] = sigma_clip(norm_flux[i][j], sigma=8).mask
 			interp_inds = np.where(interp_mask[i][j])[0]
@@ -513,13 +522,13 @@ def main(raw_args=None):
 					# otherwise, use the two neighboring points 
 					ind_1 = j - 1 
 					ind_2 = j + 1
-					
+				#ax[0].plot(times[j], norm_flux[i][j][interp_inds[k]], marker='o', color='r', ls='')	
 				norm_flux[i][j][interp_inds[k]] = np.nanmedian([norm_flux[i][ind_1][interp_inds[k]], norm_flux[i][ind_2][interp_inds[k]]])			
 				
 				# update the raw flux with the interpolated value 
 				flux[i][j][interp_inds[k]] = norm_flux[i][j][interp_inds[k]] * norm_factors[i][interp_inds[k]]
-		#ax[1].plot(times, norm_flux[i], marker='+')	
-		#breakpoint() 
+		# ax[1].plot(times, norm_flux[i], marker='+')	
+		# breakpoint() 
 
 	x_offset = int(np.floor(times[0]))
 	times -= x_offset
@@ -538,6 +547,11 @@ def main(raw_args=None):
 	pos_mask = np.zeros(len(fwhm_x), dtype='int')
 	pos_inds = np.where((abs(x_deviations) > 20) | (abs(y_deviations) > 20))[0]
 	pos_mask[pos_inds] = 1 
+	
+	# also mask on major axis FWHM measurements; we don't want images with large FWHM 
+	fwhm_mask = np.zeros(len(fwhm_x), dtype='int')
+	fwhm_inds = np.where(fwhm_x > 4)[0]
+	fwhm_mask[fwhm_inds] = 1
 
 	# optionally restrict to SAME 
 	same_mask = np.zeros(len(fwhm_x), dtype='int')
@@ -587,20 +601,22 @@ def main(raw_args=None):
 		times_list = np.delete(times_list, dates_to_remove)
 		night_inds_list = np.delete(night_inds_list, dates_to_remove)
 	
-	mask = (same_mask == 1) | (flux_mask == 1) | (wcs_flags == 1) | (pos_mask == 1)
-	airmasses[mask] = np.nan
-	exposure_times[mask] = np.nan
-	filenames[mask] = np.nan
-	ha[mask] = np.nan
-	humidity[mask] = np.nan
-	fwhm_x[mask] = np.nan 
-	fwhm_y[mask] = np.nan 
-	flux[:,mask,:] = np.nan 
-	flux_err[:,mask,:] = np.nan 
-	x[mask,:] = np.nan 
-	y[mask,:] = np.nan 
-	sky[mask,:] = np.nan
+	mask = (same_mask == 1) | (flux_mask == 1) | (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask == 1)
 
+	# 
+	# airmasses[mask] = np.nan
+	# exposure_times[mask] = np.nan
+	# filenames[mask] = np.nan
+	# ha[mask] = np.nan
+	# humidity[mask] = np.nan
+	# fwhm_x[mask] = np.nan 
+	# fwhm_y[mask] = np.nan 
+	# flux[:,mask,:] = np.nan 
+	# flux_err[:,mask,:] = np.nan 
+	# x[mask,:] = np.nan 
+	# y[mask,:] = np.nan 
+	# sky[mask,:] = np.nan
+	
 	print(f'Quality restrictions cut to {len(x_deviations)-sum(mask)} exposures out of {len(x_deviations)} total exposures. Data are on {len(dates)} nights.')
 	
 	# # finally, remove sources that have non-linear flags = 1 for more than 10% of their non-nan frames 	
@@ -650,15 +666,15 @@ def main(raw_args=None):
 	binned_flux_err = np.zeros_like(binned_flux)
 	binned_nl_flags = np.zeros_like(binned_flux, dtype='int')
 	for i in range(n_bins):
-		binned_times[i] = np.mean(times[bin_inds[i]])
-		binned_airmass[i] = np.mean(airmasses[bin_inds[i]])
-		binned_exposure_time[i] = np.nansum(exposure_times[bin_inds[i]])
+		non_masked_inds = bin_inds[i][~mask[bin_inds[i]]] # mask out potentially bad points for calculating weights
+		binned_times[i] = np.mean(times[non_masked_inds])
+		binned_airmass[i] = np.mean(airmasses[non_masked_inds])
+		binned_exposure_time[i] = np.nansum(exposure_times[non_masked_inds])
 		for j in range(n_dfs):
-			binned_flux[j,i,:] = np.nanmean(flux[j,bin_inds[i]], axis=0)
-			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,bin_inds[i]],axis=0)/np.sqrt(len(bin_inds[i]))
-			binned_nl_flags[j,i,np.sum(non_linear_flags[j,bin_inds[i]], axis=0)>1] = 1
+			binned_flux[j,i,:] = np.nanmean(flux[j,non_masked_inds], axis=0)
+			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,non_masked_inds],axis=0)/np.sqrt(len(non_masked_inds))
+			binned_nl_flags[j,i,np.sum(non_linear_flags[j,non_masked_inds], axis=0)>1] = 1
 
-	
 	avg_mearth_times = np.zeros(n_sources)
 
 	# choose a set of references and generate weights
@@ -1049,7 +1065,7 @@ def main(raw_args=None):
 			# 		os.system('echo | mutt {} -s {} -a {}'.format(emails,subject,append))
 
 			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt]}
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'Low Flux Flag':flux_mask, 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask}
 			
 			if ap_rad is not None:
 				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
