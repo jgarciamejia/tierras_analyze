@@ -67,7 +67,6 @@ def main(raw_args=None):
 
 		if mask_is_checked and not sc_is_checked:
 			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int))[0] 
-			print(all_mask)
 		elif sc_is_checked and not mask_is_checked:
 			nan_inds = ~np.isnan(flux_arr[point])
 			flux_ = flux_arr[point][nan_inds]
@@ -80,7 +79,6 @@ def main(raw_args=None):
 			flux_ = flux_arr[point][nan_inds]
 			v, l, h = sigmaclip(flux_, 4, 4)
 			sc_mask = (flux_arr[point] < l) | (flux_arr[point] > h)
-			print(sc_mask)
 			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
 		else:
 			all_mask = np.arange(len(flux_arr[point]))
@@ -93,7 +91,12 @@ def main(raw_args=None):
 			times_night = times_list[j]
 			inds = np.where((times_arr[point][all_mask] >= times_night[0]) & (times_arr[point][all_mask] <= times_night[-1]))[0]
 			bx_[j] = np.nanmedian(times_arr[point][all_mask][inds])
-			by_[j] = np.nanmedian(flux_arr[point][all_mask][inds])
+			try:
+				by_[j] = np.nanmedian(flux_arr[point][all_mask][inds])
+			except:
+				print(inds)
+				
+				breakpoint()
 			n_points = sum(~np.isnan(flux_arr[point][all_mask][inds]))
 			bye_[j] = np.nanstd(flux_arr[point][all_mask][inds]) / np.sqrt(n_points)
 
@@ -140,6 +143,11 @@ def main(raw_args=None):
 		x_plot -= np.nanmedian(x_plot)
 		y_plot -= np.nanmedian(y_plot)
 
+		# plot airmass 
+		ax5.cla()
+		ax5.plot(global_ancillary_data['BJD TDB'][all_mask]-x_offset, global_ancillary_data['Airmass'][all_mask], marker='.', ls='')
+		ax5.set_ylabel('Airmass')
+		
 		ax6.cla()
 		ax6.plot(times[all_mask], sky_plot[all_mask], marker='.', ls='', color='tab:cyan')
 		ax6.set_ylabel('Sky (ADU/s)')
@@ -252,7 +260,6 @@ def main(raw_args=None):
 		# if the box is checked, get the indices of the good exposures using the masks
 		if mask_is_checked and not sc_is_checked:
 			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int))[0] 
-			print(all_mask)
 		elif sc_is_checked and not mask_is_checked:
 			nan_inds = ~np.isnan(flux_arr[point])
 			flux_ = flux_arr[point][nan_inds]
@@ -265,7 +272,6 @@ def main(raw_args=None):
 			flux_ = flux_arr[point][nan_inds]
 			v, l, h = sigmaclip(flux_, 4, 4)
 			sc_mask = (flux_arr[point] < l) | (flux_arr[point] > h)
-			print(sc_mask)
 			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
 		else:
 			all_mask = np.arange(len(flux_arr[point]))
@@ -294,6 +300,11 @@ def main(raw_args=None):
 		ax2.legend()
 		
 		print(f'sigma_n2n = {np.nanstd(by_)*1e6:.0f}')
+
+		# plot airmass 
+		ax5.cla()
+		ax5.plot(global_ancillary_data['BJD TDB'][all_mask]-x_offset, global_ancillary_data['Airmass'][all_mask], marker='.', ls='')
+		ax5.set_ylabel('Airmass')
 
 		ax6.cla()
 		ax6.plot(times_arr[point][all_mask], global_sky_array[point][all_mask], marker='.', ls='', color='tab:cyan')
@@ -556,7 +567,6 @@ def main(raw_args=None):
 			# inds = np.array([i for i in inds if i in all_mask])
 			night_flux = flux[inds]
 
-			non_masked_inds = np.array([i for i in inds if i in all_mask])
 			calculated_night_err = calculated_flux_err[inds][night_mask]
 			# nan_inds = ~np.isnan(night_flux)
 
