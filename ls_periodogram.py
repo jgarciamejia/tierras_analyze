@@ -45,18 +45,18 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         y = np.array(y_list)
         y_err = np.array(y_err_list)
 
-        v, l, h = sigmaclip(y)
+        v, l, h = sigmaclip(y[~np.isnan(y)])
         use_inds = np.where((y>l)&(y<h))[0]
         x = x[use_inds]
         y = y[use_inds]
         y_err = y_err[use_inds]
 
-        v, l, h = sigmaclip(y_err)
+        v, l, h = sigmaclip(y_err[~np.isnan(y_err)])
         use_inds = np.where(y_err<h)[0]
         x = x[use_inds]
         y = y[use_inds]
         y_err = y_err[use_inds] 
-    
+
     x -= x[0]
 
     if pers is None:
@@ -139,81 +139,28 @@ def periodogram_plot(x, y, y_err, per, power, phase=False, color_by_time=False):
     return 
 
 if __name__ == '__main__':
-    field = '2MASSJ0443+0002'
+    field = 'LSRJ0602+3910'
     median_filter_w = 0
-    
-    # target = 'Gaia DR3 4147111775525655040'
-    # pers = np.arange(1,3,1/86400)
-    # sc = True
-    
-    # target = 'Gaia DR3 4147122323964560256'
-    # pers = np.arange(0.11, 0.15, 1/86400)
-    # sc = True
-
-    # target = 'Gaia DR3 4146918334529950720'
-    # pers = None
-    # sc = True
-
-    # target = 'Gaia DR3 4147119923100810880'
-    # pers = np.arange(0.273, .274, 1/86400)
-    # #pers = None
-    # sc = True
-
-    # target = 'Gaia DR3 4147111814201906944'
-    # pers = None
-    # sc = False
-
-    # target = 'Gaia DR3 4147111775525655040'
-    # pers = None 
-    # sc = True
-
-    # target = 'TIC362144730'
-    # pers =  np.arange(0.1, 2.5, 1/86400)
-    # sc = True
-
-    # target = 'Gaia DR3 4147120404136618752'
-    # pers = np.arange(2,2.1,1/86400)
-    # sc = True 
-
-    # target = 'Gaia DR3 4146920013827132928'
-    # pers = None
-    # sc = True 
-
-    # target = 'Gaia DR3 4147120983934854400'
-    # pers = np.arange(0.6, 1.5, 1/86400)
-    # sc = True
-
-    # target = 'Gaia DR3 4146824532452265088'
-    # pers = None
-    # sc = True
-
-    # target = 'Gaia DR3 4147114631700963456'
-    # pers = np.arange(0.25, 5, 1/86400)
-    # sc = True
-
-    # target = 'Gaia DR3 4146925275198041216'
-    # pers = np.arange(0.8,1.5,1/86400)
-    # sc = True
-
-    # field = 'LP119-26'
-    # target = 'LP119-26'
-    # pers = np.arange(1, 10, 2/86400)
-    # # pers = None
-    # sc = True 
-    # median_filter_w = 9
-
-    # target = 'Gaia DR3 31210844441123456'
-    # pers = np.arange(0.3, 0.4, 1/86400)
-    # sc = True
-
-    target = field 
-    pers = np.arange(5, 20, 5/86400)
+    quality_mask = False 
+    target = 'Gaia DR3 3457476745188160640'
+    pers = np.arange(1/24, 20, 5/86400)
     sc = True
 
     df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{target}_global_lc.csv', comment='#')
     x = np.array(df['BJD TDB'])
     y = np.array(df['Flux'])
     y_err = np.array(df['Flux Error'])
+    flux_flag = np.array(df['Low Flux Flag']).astype(bool)
+    wcs_flag = np.array(df['WCS Flag']).astype(bool)
+    pos_flag = np.array(df['Position Flag']).astype(bool)
+    fwhm_flag = np.array(df['FWHM Flag']).astype(bool)
+
+    if quality_mask: 
+        mask = np.where(~(flux_flag | wcs_flag | pos_flag | fwhm_flag))[0]
+
+        x = x[mask]
+        y = y[mask]
+        y_err = y_err[mask]
 
     nan_inds = ~np.isnan(y)
     x = x[nan_inds]
