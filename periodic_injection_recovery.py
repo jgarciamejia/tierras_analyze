@@ -9,6 +9,7 @@ from astropy.timeseries import LombScargle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from ap_phot import set_tierras_permissions
 import pickle 
+from matplotlib.ticker import FormatStrFormatter
 
 def main(raw_args=None):
     ap = argparse.ArgumentParser()
@@ -145,8 +146,13 @@ def main(raw_args=None):
     cb.set_label('Detection Fraction', rotation=270, fontsize=12)
     cb.ax.get_yaxis().labelpad = 15
     ax.tick_params(labelsize=12)
-    ax.set_xlabel('log$_{10}$(P) (days)', fontsize=14)
-    ax.set_ylabel('log$_{10}$(Amplitude)', fontsize=14)
+    ax.set_xlabel('P (days)', fontsize=14)
+    ax.set_ylabel('Amplitude', fontsize=14)
+    ax.set_yticks(np.log10(amp_grid_edges))
+    ax.set_yticklabels(FormatStrFormatter('%.4f').format_ticks(amp_grid_edges))
+    ax.set_xticks(np.log10(per_grid_edges))
+    ax.set_xticklabels(FormatStrFormatter('%.2f').format_ticks(per_grid_edges))
+    ax.grid(alpha=0.5)
     plt.tight_layout()
 
     # save the plot and injection/recovery data 
