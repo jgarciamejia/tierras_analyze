@@ -265,7 +265,7 @@ def main(raw_args=None):
 		# 	tierras_target_id = int(tierras_target_id.split(' ')[-1])
 		# else:
 		# read the first image on the last date to get the expected target x/y position
-		hdr = fits.open(glob(fpath+f'{dates[-1]}'+f'/{field}/flat0000/*.fit')[0])[0].header
+		hdr = fits.open(glob(fpath+f'{dates[-1]}'+f'/{field}/{ffname}/*.fit')[0])[0].header
 		targ_x_pix = hdr['CAT-X']
 		targ_y_pix = hdr['CAT-Y']
 		tierras_target_id = identify_target_gaia_id(field, source_dfs[0], x_pix=targ_x_pix, y_pix=targ_y_pix) 
