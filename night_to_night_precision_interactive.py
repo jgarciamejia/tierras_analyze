@@ -349,7 +349,7 @@ def main(raw_args=None):
 		date_list = np.delete(date_list, [-1])
 
 	# read in weights csv
-	weights_df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/weights.csv')
+	weights_df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/weights.csv')
 	ref_ids = np.array(weights_df['Ref ID'])
 	weights_df = np.array(weights_df)
 
@@ -387,7 +387,7 @@ def main(raw_args=None):
 	source_image = fits.open(flattened_files[best_im_ind])[0].data
 
 	# get the global light curves that have been created for this field
-	lc_files = glob.glob(f'/data/tierras/fields/{field}/sources/lightcurves/**global_lc.csv')
+	lc_files = glob.glob(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/**global_lc.csv')
 	times = np.array(pd.read_csv(lc_files[0], comment='#')['BJD TDB'])
 	x_offset = times[0]
 	times -= x_offset
@@ -742,7 +742,7 @@ def main(raw_args=None):
 	ax8.set_ylabel('FWHM (")')
 
 	fig.axes[-1].set_xlabel('BJD TDB', fontsize=14)
-
+	plt.suptitle(f'{field} field', fontsize=14)
 	plt.tight_layout()
 
 	print(f'Median observed/theory (calculated uncertainties): {np.nanmedian(night_to_nights/night_to_nights_theory_calculated):.1f}')
