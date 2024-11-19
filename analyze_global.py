@@ -112,7 +112,7 @@ def main(raw_args=None):
 	fpath = '/data/tierras/flattened/'
 
 	# delete any existing global light curves
-	lc_path = f'/data/tierras/fields/{field}/sources/lightcurves/'
+	lc_path = f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/'
 	existing_lc_files = glob(lc_path+'*')
 	for i in range(len(existing_lc_files)):
 		os.remove(existing_lc_files[i])
