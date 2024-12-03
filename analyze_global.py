@@ -220,7 +220,7 @@ def main(raw_args=None):
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
-	
+		
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
@@ -480,7 +480,7 @@ def main(raw_args=None):
 
 		start = stop
 	print(f'Read-in: {time.time()-t1}')
-
+	
 	# write out a global ancillary .csv 
 	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
 	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])
@@ -539,9 +539,9 @@ def main(raw_args=None):
 	median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1))
 	
 	# mask on median flux; we dont want to include exposures that are low flux due to clouds, field shifts, WCS errors, etc.
-	# flux_mask = np.zeros(len(fwhm_x), dtype='int')
-	# flux_inds = np.where(median_flux < 0.8)[0]
-	# flux_mask[flux_inds] = 1
+	flux_mask = np.zeros(len(fwhm_x), dtype='int')
+	flux_inds = np.where(median_flux < 0.5)[0]
+	flux_mask[flux_inds] = 1
 	
 	# also mask on x/y pixel positions; we don't want images with large position excursions
 	pos_mask = np.zeros(len(fwhm_x), dtype='int')
@@ -601,7 +601,7 @@ def main(raw_args=None):
 		times_list = np.delete(times_list, dates_to_remove)
 		night_inds_list = np.delete(night_inds_list, dates_to_remove)
 	
-	mask = (same_mask == 1) | (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask == 1)
+	mask = (same_mask == 1) | (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask == 1) | (flux_mask == 1)
 
 	# 
 	# airmasses[mask] = np.nan
@@ -830,7 +830,7 @@ def main(raw_args=None):
 		if best_corr_flux is not None:
 			
 			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask}
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask}
 			
 			if ap_rad is not None:
 				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
