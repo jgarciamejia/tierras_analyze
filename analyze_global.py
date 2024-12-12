@@ -220,7 +220,7 @@ def main(raw_args=None):
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
-		
+	
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
@@ -242,6 +242,7 @@ def main(raw_args=None):
 		source_inds.append([])
 		for j in range(len(common_source_ids)):
 			source_inds[i].extend([np.where(source_dfs[i]['source_id'] == common_source_ids[j])[0][0]])
+	
 	
 	#TODO: what happens when there are different sources on different nights (i.e., if we shifted the field??)
 	# figure out how big the arrays need to be to hold the data
@@ -480,7 +481,7 @@ def main(raw_args=None):
 
 		start = stop
 	print(f'Read-in: {time.time()-t1}')
-	
+
 	# write out a global ancillary .csv 
 	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
 	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])
@@ -649,7 +650,14 @@ def main(raw_args=None):
 	# 		binned_flux_err[j,i,:] = np.nanmean(flux_err[j,night_inds_list[i]],axis=0)/np.sqrt(len(night_inds_list[i]))
 	# 		binned_nl_flags[j,i,np.sum(non_linear_flags[j,night_inds_list[i]], axis=0)>1] = 1
 
-	ppb = 10 # TODO: how do we get 5-minute bins in the general case where exposure time is changing 
+ 	# TODO: how do we get 5-minute bins in the general case where exposure time is changing 
+	if flux.shape[1] < 50: 
+		ppb = 2
+	elif (flux.shape[1] >= 50) and (flux.shape[1] < 100): 
+		ppb = 5
+	else:
+		ppb = 10
+
 	n_bins = int(np.ceil(n_ims/ppb))
 	bin_inds = []
 	for i in range(n_bins):
@@ -826,7 +834,6 @@ def main(raw_args=None):
 				best_alc = alc
 				best_alc_err = alc_err
 		
-
 		if best_corr_flux is not None:
 			
 			# write out the best light curve 

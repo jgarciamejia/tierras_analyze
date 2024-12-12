@@ -2,10 +2,12 @@ from astropy.timeseries import LombScargle
 import pandas as pd 
 import numpy as np 
 import matplotlib.pyplot as plt 
-plt.ion()
+plt.ioff()
 from scipy.stats import sigmaclip
 from median_filter import median_filter_uneven
 from scipy.optimize import curve_fit 
+import argparse 
+from ap_phot import t_or_f
 
 def sine_model(x, a, c, d):
     return a*np.sin(2*np.pi*x+c)+d
@@ -96,10 +98,11 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     ax2.plot(per, power, marker='.')
     ax2.set_xscale('log')
     best_per = per[np.argmax(power)]
-    ax2.plot(best_per, np.max(power), marker='o')
+    ax2.plot(best_per, np.max(power), marker='o', label=f'P={best_per:.2f} d')
     ax2.set_xlabel('Period (d)', fontsize=14)
     ax2.set_ylabel('Power', fontsize=14)
-    
+    ax2.legend() 
+
     # best_per = 2.48978
     ax3.plot(per, window_fn_power, marker='.')
     ax3.set_xscale('log')
@@ -141,20 +144,49 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     
     ax4.plot(model_times, sine_model(model_times, params[0], params[1], params[2]), lw=2, color='k', label='Best-fit sine model')
     plt.tight_layout()
-    return 
+    breakpoint()
+    return fig, (ax1, ax2, ax3, ax4)
 
-if __name__ == '__main__':
-    field = 'WASP-156'
-    ffname = 'flat0000'
-    median_filter_w = 0
-    quality_mask = False 
-    target = field
-    pers = np.arange(1/24, 100, 15/86400)
-    # pers = np.arange(1/24, 1, 1/86400)
-    # pers = None
-    sc = True
+def main(raw_args=None):
+    ap = argparse.ArgumentParser()
 
-    df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/{target}_global_lc.csv', comment='#')
+    ap.add_argument('-field', required=True, help='Name of field')
+    ap.add_argument('-gaia_id', required=False, default=None, help='Gaia source_id of target in field for which to run periodogram. If None passed, will use the field name as the target.')
+    ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flat directory to use for reading light curves.')
+    ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
+    ap.add_argument('-quality_mask', required=False, default='False', type=str)
+    ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
+    ap.add_argument('-autofreq', required=False, default='False', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
+    ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')
+    ap.add_argument('-per_hi', required=False, default=100, type=float, help='Upper period (in days) to use to establish frequency grid IF autofreq is False.')
+    ap.add_argument('-per_resolution', required=False, default=15/86400, type=float, help='Period resolution (in days) to use to establish frequency grid IF autofreq is False.')
+
+    args = ap.parse_args(raw_args)
+    field = args.field
+    gaia_id = args.gaia_id
+    ffname = args.ffname 
+    median_filter_w = args.median_filter_w
+    quality_mask = t_or_f(args.quality_mask)
+    sc = t_or_f(args.sigmaclip)
+    autofreq = t_or_f(args.autofreq)
+    per_lower = args.per_low
+    per_upper = args.per_hi
+    per_res = args.per_resolution
+
+    if gaia_id is None:
+        target = field 
+    else:
+        target = f'Gaia DR3 {gaia_id}'
+
+    if autofreq: 
+        pers = None 
+    else:
+        pers = np.arange(per_lower, per_upper, per_res)
+
+    try:
+        df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/{target}_global_lc.csv', comment='#')
+    except:
+        return None, None, None
     x = np.array(df['BJD TDB'])
     y = np.array(df['Flux'])
     y_err = np.array(df['Flux Error'])
@@ -191,8 +223,10 @@ if __name__ == '__main__':
 
     # calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(x, np.ones_like(x), fit_mean=False, center_data=False).power(freq)
-    periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=True)
+    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=True)
 
-   
+    return fig, ax, power
 
-    breakpoint()
+
+if __name__ == '__main__':
+    main()

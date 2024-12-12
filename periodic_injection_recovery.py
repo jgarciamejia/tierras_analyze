@@ -198,11 +198,10 @@ def main(raw_args=None):
 
             if ((sum(detection_in_range) > 0)  or (neighbor_detection) )and (power[np.argmax(power)] > window_fn_power[np.argmax(power)] * window_fn_threshold_factor): 
                 recovery_counts[j,i] += 1
-            # else:
-            #     if per > 30 and amp > 0.01:
-            #         plot_injection_recovery(times, injected_flux, signal, freq, power, per_max_power, per, window_fn_power, alias_lowers, alias_uppers)
-            #         breakpoint()
 
+                if np.argmax(power) < 0.2 and per < 100:
+                    plot_injection_recovery(times, injected_flux, signal, freq, power, per_max_power, per, window_fn_power, alias_lowers, alias_uppers)
+                    breakpoint()
             n_injected += 1   
         success_rate = recovery_counts / injection_counts
         if n_injected % 500 == 0 and n_injected != 0:
