@@ -9,8 +9,8 @@ from scipy.optimize import curve_fit
 import argparse 
 from ap_phot import t_or_f
 
-def sine_model(x, a, c, d):
-    return a*np.sin(2*np.pi*x+c)+d
+def sine_model(x, a, c):
+    return a*np.sin(2*np.pi*x+c)+1
 
 def periodogram(x, y, y_err, pers=None, sc=False):
     # remove NaNs
@@ -94,7 +94,8 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',color=color,zorder=0)
     ax1.set_xlabel('BJD TDB', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
-    
+    ax1.grid(alpha=0.7)
+ 
     ax2.plot(per, power, marker='.')
     ax2.set_xscale('log')
     best_per = per[np.argmax(power)]
@@ -102,12 +103,14 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     ax2.set_xlabel('Period (d)', fontsize=14)
     ax2.set_ylabel('Power', fontsize=14)
     ax2.legend() 
+    ax2.grid(alpha=0.7)
 
     # best_per = 2.48978
     ax3.plot(per, window_fn_power, marker='.')
     ax3.set_xscale('log')
     ax3.set_ylabel('Window fn. power', fontsize=14)
     ax3.set_xlabel('Period (d)', fontsize=14)
+    ax3.grid(alpha=0.7)
 
     phased_x = (x % best_per) / best_per 
     sort = np.argsort(phased_x)
@@ -126,7 +129,8 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     model_phase = 0
     model_offset = 1
 
-    params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase, model_offset]) 
+    params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase]) 
+    print(f'Amplitude: {abs(params[0])*1e3:.1f} ppt')
     
     phase_bin = 0.05
     n_bin = int(1/phase_bin)
@@ -136,13 +140,19 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     for i in range(n_bin):
         phase_start = i*phase_bin
         phase_end = (i+1)*phase_bin
-        inds = np.where((phased_x >= phase_start) & (phased_x < phase_end))[0]
         bx[i] = (phase_start + phase_end)/2
-        by[i] = np.nanmean(phased_y[inds])
-        bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
+
+        inds = np.where((phased_x >= phase_start) & (phased_x < phase_end))[0]
+        if len(inds) == 0:
+            by[i] = np.nan
+            bye[i] = np.nan
+        else:
+            #by[i] = np.nanmean(phased_y[inds])
+            by[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
+            bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
     ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
     
-    ax4.plot(model_times, sine_model(model_times, params[0], params[1], params[2]), lw=2, color='k', label='Best-fit sine model')
+    ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='k', label='Best-fit sine model')
     plt.tight_layout()
     breakpoint()
     return fig, (ax1, ax2, ax3, ax4)
