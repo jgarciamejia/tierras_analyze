@@ -8,6 +8,7 @@ from median_filter import median_filter_uneven
 from scipy.optimize import curve_fit 
 import argparse 
 from ap_phot import t_or_f
+from scipy.signal import find_peaks
 
 def sine_model(x, a, c):
     return a*np.sin(2*np.pi*x+c)+1
@@ -71,11 +72,93 @@ def periodogram(x, y, y_err, pers=None, sc=False):
     return x, y, y_err, pers, freqs, power
 
 def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=False):
-    fig = plt.figure(figsize=(9,9))
+
+    def on_click(event):
+        ''' allow the user to click on different periodogram peaks and phase on them '''
+
+        global highlight 
+
+        ax = event.inaxes
+        if ax is not None: 
+            label = axes_mapping.get(ax, 'Unknown axis')
+        else:
+            return 
+        
+        if label != 'ax2':
+            return
+
+        xdata = event.xdata 
+        ydata = event.ydata 
+        
+        dists = np.sqrt((xdata - peak_pers)**2 + (ydata - peak_pows)**2)
+        point = np.argmin(dists)
+
+        print(f'Per = {peak_pers[point]:.2f} d, pow = {peak_pows[point]:.2f}')
+
+        if highlight:
+            ax2.lines[-1].remove()
+
+        highlight = ax2.plot(peak_pers[point], peak_pows[point], marker='o', color='tab:orange', label=f'P = {peak_pers[point]:.2f} d')
+        ax2.legend()
+
+        ax4.cla()
+
+        best_per = peak_pers[point]
+
+        phased_x = (x % best_per) / best_per 
+
+        sort = np.argsort(phased_x)
+        phased_x = phased_x[sort]
+        phased_y = y[sort]
+        phased_y_err = y_err[sort]
+
+        ax4.scatter(phased_x, phased_y, c=color[sort], s=5)
+        ax4.errorbar(phased_x, phased_y, phased_y_err, linestyle="None",marker='',color=color[sort],zorder=0)
+        ax4.set_xlabel('Phase', fontsize=14)
+        ax4.set_ylabel('Normalized Flux', fontsize=14)
+        ax4.grid(alpha=0.7)
+
+        model_times = np.linspace(phased_x[0], phased_x[-1], 10000)
+        model_amp = 0.05
+        model_phase = 0
+        model_offset = 1
+
+        params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase]) 
+        print(f'Amplitude: {abs(params[0])*1e3:.1f} ppt')
+        
+        phase_bin = 0.05
+        n_bin = int(1/phase_bin)
+        bx = np.zeros(n_bin)
+        by = np.zeros(n_bin)
+        bye = np.zeros(n_bin)
+        for i in range(n_bin):
+            phase_start = i*phase_bin
+            phase_end = (i+1)*phase_bin
+            bx[i] = (phase_start + phase_end)/2
+
+            inds = np.where((phased_x >= phase_start) & (phased_x < phase_end))[0]
+            if len(inds) == 0:
+                by[i] = np.nan
+                bye[i] = np.nan
+            else:
+                #by[i] = np.nanmean(phased_y[inds])
+                by[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
+                bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
+        ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
+        
+        ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='k', label='Best-fit sine model')
+
+        return 
+
+    fig = plt.figure(figsize=(12,12))
     ax1 = plt.subplot(411)
     ax2 = plt.subplot(412)
     ax3 = plt.subplot(413, sharex=ax2)
     ax4 = plt.subplot(414)
+
+    global highlight
+    cid = fig.canvas.mpl_connect('button_press_event', on_click)
+    axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
 
     ax1.tick_params(labelsize=12)
     ax2.tick_params(labelsize=12)
@@ -98,8 +181,16 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
  
     ax2.plot(per, power, marker='.')
     ax2.set_xscale('log')
+
+    peaks = find_peaks(power, prominence=0.02)
+    peak_pers = per[peaks[0]]
+    peak_pows = power[peaks[0]]
+
+    ax2.plot(peak_pers, peak_pows, marker='o', color='tab:pink', mew=1.5, mfc='none', ls='')
+
     best_per = per[np.argmax(power)]
-    ax2.plot(best_per, np.max(power), marker='o', label=f'P={best_per:.2f} d')
+    # ax2.plot(best_per, np.max(power), marker='o', label=f'P={best_per:.2f} d')
+    highlight = ax2.plot(best_per, np.max(power), marker='o', color='tab:orange', label=f'P = {best_per:.2f} d')
     ax2.set_xlabel('Period (d)', fontsize=14)
     ax2.set_ylabel('Power', fontsize=14)
     ax2.legend() 
