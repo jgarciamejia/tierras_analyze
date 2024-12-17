@@ -90,20 +90,20 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
         xdata = event.xdata 
         ydata = event.ydata 
         
-        dists = np.sqrt((xdata - peak_pers)**2 + (ydata - peak_pows)**2)
+        dists = np.sqrt((xdata - per)**2 + (ydata - power)**2)
         point = np.argmin(dists)
 
-        print(f'Per = {peak_pers[point]:.2f} d, pow = {peak_pows[point]:.2f}')
+        print(f'Per = {per[point]:.2f} d, pow = {power[point]:.2f}')
 
         if highlight:
             ax2.lines[-1].remove()
 
-        highlight = ax2.plot(peak_pers[point], peak_pows[point], marker='o', color='tab:orange', label=f'P = {peak_pers[point]:.2f} d')
+        highlight = ax2.plot(per[point], power[point], marker='o', color='tab:orange', label=f'P = {per[point]:.2f} d')
         ax2.legend()
 
         ax4.cla()
 
-        best_per = peak_pers[point]
+        best_per = per[point]
 
         phased_x = (x % best_per) / best_per 
 
@@ -182,11 +182,11 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
     ax2.plot(per, power, marker='.')
     ax2.set_xscale('log')
 
-    peaks = find_peaks(power, prominence=0.02)
-    peak_pers = per[peaks[0]]
-    peak_pows = power[peaks[0]]
+    # peaks = find_peaks(power, prominence=0.02)
+    # peak_pers = per[peaks[0]]
+    # peak_pows = power[peaks[0]]
 
-    ax2.plot(peak_pers, peak_pows, marker='o', color='tab:pink', mew=1.5, mfc='none', ls='')
+    # ax2.plot(peak_pers, peak_pows, marker='o', color='tab:pink', mew=1.5, mfc='none', ls='')
 
     best_per = per[np.argmax(power)]
     # ax2.plot(best_per, np.max(power), marker='o', label=f'P={best_per:.2f} d')
