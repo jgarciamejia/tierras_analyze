@@ -90,7 +90,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
         xdata = event.xdata 
         ydata = event.ydata 
         
-        dists = np.sqrt((xdata - per)**2 + (ydata - power)**2)
+        dists = np.sqrt((np.log10(xdata) - np.log10(per))**2 + (ydata - power)**2)
         point = np.argmin(dists)
 
         print(f'Per = {per[point]:.2f} d, pow = {power[point]:.2f}')
