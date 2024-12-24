@@ -69,7 +69,7 @@ print('Updating the database...')
 args = f'-date {date}'
 build_tierras_db_main(args.split())
 
-email = "patrick.tamburo@cfa.harvard.edu"  # Replace with your email address
-subject = f"Completed data procesing for {date}"
+email = "patrick.tamburo@cfa.harvard.edu juliana.garcia-mejia@cfa.harvard.edu"  
+subject = f"[Tierras]: Completed data procesing for {date}"
 command = f'echo | mutt {email} -s "{subject}"'
 subprocess.run(command, shell=True, check=True)
