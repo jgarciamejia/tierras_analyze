@@ -9,6 +9,7 @@ from scipy.optimize import curve_fit
 import argparse 
 from ap_phot import t_or_f
 from scipy.signal import find_peaks
+import os 
 
 def sine_model(x, a, c):
     return a*np.sin(2*np.pi*x+c)+1
@@ -96,6 +97,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
         print(f'Per = {per[point]:.2f} d, pow = {power[point]:.2f}')
 
         if highlight:
+            ax1.lines[-1].remove()
             ax2.lines[-1].remove()
 
         highlight = ax2.plot(per[point], power[point], marker='o', color='tab:orange', label=f'P = {per[point]:.2f} d')
@@ -146,7 +148,10 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
                 bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
         ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
         
-        ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='k', label='Best-fit sine model')
+        ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='#b0b0b0', label='Best-fit sine model')
+
+        unphased_model = params[0]*np.sin(2*np.pi*unphased_model_times/best_per+params[1])+1
+        ax1.plot(unphased_model_times, unphased_model, color='#b0b0b0', zorder=0)
 
         return 
 
@@ -243,8 +248,16 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
             bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
     ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
     
-    ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='k', label='Best-fit sine model')
+    ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='#b0b0b0', label='Best-fit sine model')
+
+    # add plot of unphased model to first panel
+    unphased_model_times = np.linspace(x[0], x[-1], 10000)
+    unphased_model = params[0]*np.sin(2*np.pi*unphased_model_times/best_per+params[1])+1
+    ax1.plot(unphased_model_times, unphased_model, color='#b0b0b0', zorder=0)
+
     plt.tight_layout()
+
+
     breakpoint()
     return fig, (ax1, ax2, ax3, ax4)
 
@@ -257,7 +270,7 @@ def main(raw_args=None):
     ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
     ap.add_argument('-quality_mask', required=False, default='False', type=str)
     ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
-    ap.add_argument('-autofreq', required=False, default='False', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
+    ap.add_argument('-autofreq', required=False, default='True', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
     ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')
     ap.add_argument('-per_hi', required=False, default=100, type=float, help='Upper period (in days) to use to establish frequency grid IF autofreq is False.')
     ap.add_argument('-per_resolution', required=False, default=15/86400, type=float, help='Period resolution (in days) to use to establish frequency grid IF autofreq is False.')
@@ -296,6 +309,22 @@ def main(raw_args=None):
     pos_flag = np.array(df['Position Flag']).astype(bool)
     fwhm_flag = np.array(df['FWHM Flag']).astype(bool)
     flux_flag = np.array(df['Flux Flag']).astype(bool)
+    
+    # check for file indicating start/end times of transits; if it exists, use it to mask out in-transit points   
+    if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv'):
+        transit_time_df = pd.read_csv(f'/data/tierras/fields/{field}/{field}_transit_times.csv')
+        start_times = np.array(transit_time_df['tstart'])
+        end_times = np.array(transit_time_df['tend'])
+        transit_inds = np.ones_like(x, dtype='bool')
+        for i in range(len(start_times)):
+            transit_inds[np.where((x >= start_times[i]) & (x <= end_times[i]))[0]] = False
+        x = x[transit_inds]
+        y = y[transit_inds]
+        y_err = y_err[transit_inds]
+        wcs_flag = wcs_flag[transit_inds]
+        pos_flag = pos_flag[transit_inds]
+        fwhm_flag = fwhm_flag[transit_inds]
+        flux_flag = flux_flag[transit_inds]
 
     if quality_mask: 
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag))[0]
@@ -309,6 +338,11 @@ def main(raw_args=None):
     y = y[nan_inds]
     y_err = y_err[nan_inds]
     
+    # renormalize with masks applied 
+    norm = np.nanmedian(y)
+    y /= norm 
+    y_err /= norm 
+ 
     if median_filter_w != 0:
         print(f'Median filtering target flux with a filter width of {median_filter_w} days.')
         x_filter, y_filter = median_filter_uneven(x, y, median_filter_w)
