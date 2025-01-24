@@ -250,9 +250,9 @@ def main(raw_args=None):
     x_model = np.linspace(min(x), max(x), 10000)
     cm = plt.get_cmap('viridis')
     random_sample_color = 120
-    fig, ax = plt.subplots(1, 1, figsize=(20,5), sharey=True, sharex='col')
+    fig, ax = plt.subplots(1, 1, figsize=(14,5), sharey=True, sharex='col')
     ax.set_ylabel('Normalized Flux', fontsize=16)
-    ax.plot(x, y, marker='o', color='#C0C0C0', ls='')
+    ax.plot(x, y, marker='.', color='#C0C0C0', ls='', zorder=0)
     #Plot random samples
 
     for s in random_samps:
@@ -260,9 +260,10 @@ def main(raw_args=None):
         mu = gp.predict(y, x_model, return_cov=False)
         ax.plot(x_model, mu, color=cm(random_sample_color), alpha=0.02, zorder=1)
 
-    ax.errorbar(bx, by, bye, marker='o', mfc='none', mec='k', mew=1.5, ls='', zorder=4)
+    ax.errorbar(bx, by, bye, marker='o', mfc='none', mec='k', ecolor='k', mew=1.5, ls='', zorder=4)
     ax.grid(alpha=0.5)
-    ax.set_xlabel('BJD$_{TDB} -$'+f'{x_offset}', fontsize=14)
+    ax.set_xlabel('BJD$_{TDB} -$'+f'{x_offset:.4f}', fontsize=14)
+    #ax.set_xlabel('BJD$_{TDB}$', fontsize=14)
     ax.set_ylabel('Normalized Flux', fontsize=14)
     ax.tick_params(labelsize=12)
     plt.tight_layout()

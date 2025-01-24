@@ -61,7 +61,8 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         y = y[use_inds]
         y_err = y_err[use_inds] 
 
-    x -= x[0]
+    x_offset = x[0]
+    x -= x_offset
 
     if pers is None:
         freqs, power = LombScargle(x, y, y_err).autopower()
@@ -70,9 +71,9 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         freqs = 1/pers
         power = LombScargle(x, y, y_err).power(freqs)
 
-    return x, y, y_err, pers, freqs, power
+    return x, y, y_err, pers, freqs, power, x_offset
 
-def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=False):
+def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_by_time=False):
 
     def on_click(event):
         ''' allow the user to click on different periodogram peaks and phase on them '''
@@ -180,7 +181,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=Fal
 
     ax1.scatter(x, y, c=color, s=2)
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',color=color,zorder=0)
-    ax1.set_xlabel('BJD TDB', fontsize=14)
+    ax1.set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
  
@@ -311,13 +312,14 @@ def main(raw_args=None):
     flux_flag = np.array(df['Flux Flag']).astype(bool)
     
     # check for file indicating start/end times of transits; if it exists, use it to mask out in-transit points   
-    if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv'):
+    if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv') and target == field:
         transit_time_df = pd.read_csv(f'/data/tierras/fields/{field}/{field}_transit_times.csv')
         start_times = np.array(transit_time_df['tstart'])
         end_times = np.array(transit_time_df['tend'])
         transit_inds = np.ones_like(x, dtype='bool')
         for i in range(len(start_times)):
             transit_inds[np.where((x >= start_times[i]) & (x <= end_times[i]))[0]] = False
+        print(f'Masking {len(x)-sum(transit_inds)} in-transit_points.')
         x = x[transit_inds]
         y = y[transit_inds]
         y_err = y_err[transit_inds]
@@ -325,6 +327,28 @@ def main(raw_args=None):
         pos_flag = pos_flag[transit_inds]
         fwhm_flag = fwhm_flag[transit_inds]
         flux_flag = flux_flag[transit_inds]
+
+    # alternatively, the user can declare a list of linear ephemerides for planets in the system; if this file exists, use it to mask in-transit points 
+    if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv') and target == field:
+        ephem_df = pd.read_csv(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv')
+        for i in range(len(ephem_df)):
+            t0 = ephem_df['t0'][i]
+            per = ephem_df['period'][i]
+            dur = ephem_df['duration'][i]
+            start_n = int(np.ceil((x[0]-t0)/per))
+            end_n = int(np.floor(x[-1]-t0)/per)
+            tn = t0 + per*np.arange(start_n, end_n+1)
+            transit_inds = np.ones_like(x, dtype='bool')
+            for j in range(len(tn)):
+                transit_inds[np.where((x > tn[j]-dur/2) & (x < tn[j] + dur/2))[0]] = False
+            print(f'Masking {len(x)-sum(transit_inds)} in-transit_points.')
+            x = x[transit_inds]
+            y = y[transit_inds]
+            y_err = y_err[transit_inds]
+            wcs_flag = wcs_flag[transit_inds]
+            pos_flag = pos_flag[transit_inds]
+            fwhm_flag = fwhm_flag[transit_inds]
+            flux_flag = flux_flag[transit_inds]
 
     if quality_mask: 
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag))[0]
@@ -354,11 +378,11 @@ def main(raw_args=None):
         # plt.plot(x,mu*y/y_filter)
         y =  mu*y/(y_filter)
 
-    x, y, y_err, per, freq, power = periodogram(x, y, y_err, pers=pers, sc=sc)
+    x, y, y_err, per, freq, power, x_offset = periodogram(x, y, y_err, pers=pers, sc=sc)
 
     # calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(x, np.ones_like(x), fit_mean=False, center_data=False).power(freq)
-    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, color_by_time=True)
+    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_by_time=True)
 
     return fig, ax, power
 
