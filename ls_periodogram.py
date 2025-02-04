@@ -97,12 +97,17 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
 
         print(f'Per = {per[point]:.2f} d, pow = {power[point]:.2f}')
 
+        save_ax2_xlim = ax2.get_xlim()
+        save_ax2_ylim = ax2.get_ylim()
+
         if highlight:
             ax1.lines[-1].remove()
             ax2.lines[-1].remove()
 
-        highlight = ax2.plot(per[point], power[point], marker='o', color='tab:orange', label=f'P = {per[point]:.2f} d')
+        highlight = ax2.plot(per[point], power[point], marker='o', color='m', label=f'P = {per[point]:.2f} d')
         ax2.legend()
+        ax2.set_xlim(save_ax2_xlim)
+        ax2.set_ylim(save_ax2_ylim)
 
         ax4.cla()
 
@@ -156,19 +161,19 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
 
         return 
 
-    fig = plt.figure(figsize=(12,12))
-    ax1 = plt.subplot(411)
-    ax2 = plt.subplot(412)
-    ax3 = plt.subplot(413, sharex=ax2)
-    ax4 = plt.subplot(414)
+    fig = plt.figure(figsize=(15,10))
+    ax1 = plt.subplot(311)
+    ax2 = plt.subplot(312)
+    #ax3 = plt.subplot(413, sharex=ax2)
+    ax4 = plt.subplot(313)
 
     global highlight
     cid = fig.canvas.mpl_connect('button_press_event', on_click)
-    axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
-
+    axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax4: 'ax4'}
+    # axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
     ax1.tick_params(labelsize=12)
     ax2.tick_params(labelsize=12)
-    ax3.tick_params(labelsize=12)
+    # ax3.tick_params(labelsize=12)
     ax4.tick_params(labelsize=12)
 
     if color_by_time: 
@@ -184,8 +189,9 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
     ax1.set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
- 
-    ax2.plot(per, power, marker='.')
+    
+    ax2.plot(per, window_fn_power, marker='.', color='tab:orange', label='Window fn.')
+    ax2.plot(per, power, marker='.', color='tab:blue', label='Data')
     ax2.set_xscale('log')
 
     # peaks = find_peaks(power, prominence=0.02)
@@ -196,18 +202,18 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
 
     best_per = per[np.argmax(power)]
     # ax2.plot(best_per, np.max(power), marker='o', label=f'P={best_per:.2f} d')
-    highlight = ax2.plot(best_per, np.max(power), marker='o', color='tab:orange', label=f'P = {best_per:.2f} d')
+    highlight = ax2.plot(best_per, np.max(power), marker='o', color='m', label=f'P = {best_per:.2f} d')
     ax2.set_xlabel('Period (d)', fontsize=14)
     ax2.set_ylabel('Power', fontsize=14)
     ax2.legend() 
     ax2.grid(alpha=0.7)
 
     # best_per = 2.48978
-    ax3.plot(per, window_fn_power, marker='.')
-    ax3.set_xscale('log')
-    ax3.set_ylabel('Window fn. power', fontsize=14)
-    ax3.set_xlabel('Period (d)', fontsize=14)
-    ax3.grid(alpha=0.7)
+    # ax3.plot(per, window_fn_power, marker='.')
+    # ax3.set_xscale('log')
+    # ax3.set_ylabel('Window fn. power', fontsize=14)
+    # ax3.set_xlabel('Period (d)', fontsize=14)
+    # ax3.grid(alpha=0.7)
 
     phased_x = (x % best_per) / best_per 
     sort = np.argsort(phased_x)
@@ -260,7 +266,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
 
 
     breakpoint()
-    return fig, (ax1, ax2, ax3, ax4)
+    return fig, (ax1, ax2, ax4)
 
 def main(raw_args=None):
     ap = argparse.ArgumentParser()
@@ -269,7 +275,7 @@ def main(raw_args=None):
     ap.add_argument('-gaia_id', required=False, default=None, help='Gaia source_id of target in field for which to run periodogram. If None passed, will use the field name as the target.')
     ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flat directory to use for reading light curves.')
     ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
-    ap.add_argument('-quality_mask', required=False, default='False', type=str)
+    ap.add_argument('-quality_mask', required=False, default='True', type=str)
     ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
     ap.add_argument('-autofreq', required=False, default='True', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
     ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')

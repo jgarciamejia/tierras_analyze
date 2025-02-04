@@ -27,6 +27,17 @@ elif phot_type == 'variable':
     ap_radii = np.arange(0.5, 1.6, 0.1)
 
 target_list = sorted(os.listdir(f'/data/tierras/flattened/{date}'))
+# move any fields in analysis_priority_fields.txt to the front of the list 
+with open('analysis_priority_fields.txt', 'r') as f:
+    priority_targets = f.readlines()
+priority_targets = [i.strip() for i in priority_targets][::-1]
+for i in range(len(priority_targets)):
+    shift_ind = np.where([j == priority_targets[i] for j in target_list])[0]
+    if len(shift_ind) == 0: # if the target is in the priority list but was not observed, skip it
+        continue 
+    target_list.remove(priority_targets[i])
+    target_list.insert(0, priority_targets[i])
+
 for j in range(len(target_list)):
     target = target_list[j]
     if target == 'TARGET' or target == 'TARGET_red':
@@ -49,7 +60,16 @@ try:
 except:
     print(f'No photometry directories found on {date}...')
 
+# regenerate the target list and do any necessary priority re-sorting
+# not necessarily all the targets will have had photometry done on them so it needs to be regenerated 
+    #e.g. if all the images were way off the desired guiding position
 target_list = sorted(np.unique(targets))
+for i in range(len(priority_targets)):
+    shift_ind = np.where([j == priority_targets[i] for j in target_list])[0]
+    if len(shift_ind) == 0: # if the target is in the priority list but was not observed, skip it 
+        continue
+    target_list.remove(priority_targets[i])
+    target_list.insert(0, priority_targets[i])
 
 print(f'Found {len(target_list)} unique targets across the given date list.')
 

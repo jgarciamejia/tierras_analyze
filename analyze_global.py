@@ -92,7 +92,7 @@ def main(raw_args=None):
 	ap.add_argument("-minimum_night_duration", required=False, default=0, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
 	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
 	ap.add_argument("-cut_contaminated", required=False, default=False, help="Whether or not to cut sources based on contamination metric.")
-
+	ap.add_argument("-force_reweight", required=False, default=False, help="Whether or not to force recalculation of reference star weights")
 	args = ap.parse_args(raw_args)
 
 	#Access observation info
@@ -101,6 +101,7 @@ def main(raw_args=None):
 	email = t_or_f(args.email)
 	plot = t_or_f(args.plot)
 	same = t_or_f(args.SAME)
+	force_reweight = t_or_f(args.force_reweight)
 	minimum_night_duration = args.minimum_night_duration
 	ap_rad = args.ap_rad	
 	if args.target is None: 
@@ -113,7 +114,7 @@ def main(raw_args=None):
 
 	# delete any existing global light curves
 	lc_path = f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/'
-	existing_lc_files = glob(lc_path+'*')
+	existing_lc_files = glob(lc_path+'*_lc.csv')
 	for i in range(len(existing_lc_files)):
 		os.remove(existing_lc_files[i])
 
@@ -211,7 +212,6 @@ def main(raw_args=None):
 			header = hdul[0].header
 			wcs = WCS(header)
 		
-
 	# read in the source df's from each night 
 	source_dfs = []
 	source_ids = []
@@ -695,15 +695,6 @@ def main(raw_args=None):
 		ref_gaia_ids = common_source_ids
 		ref_inds = np.arange(len(common_source_ids))
 
-	print(f'Weighting {len(ref_inds)} reference stars...')
-	weights_arr = np.zeros((len(ref_inds), n_dfs))
-	for i in range(n_dfs):
-		print(f'{i+1} of {n_dfs}')
-		flux_arr = binned_flux[i][:,ref_inds]
-		flux_err_arr = binned_flux_err[i][:,ref_inds]
-		nl_flag_arr = binned_nl_flags[i][:,ref_inds]
-		weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
-		weights_arr[:, i] = weights
 
 	# create a 'lightcurves' directory for output
 	output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}')
@@ -720,14 +711,49 @@ def main(raw_args=None):
 		os.mkdir(output_path)
 		set_tierras_permissions(output_path)
 
-	# save a csv with the weights to the light curve directory 
-	weights_dict = {'Ref ID':common_source_ids[ref_inds]}
-	for i in range(n_dfs):
-		ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.parquet')[0]
-		weights_dict[ap_size] = weights_arr[:,i]
-	weights_df = pd.DataFrame(weights_dict)
-	weights_df.to_csv(f'{output_path}/weights.csv', index=0)
-	set_tierras_permissions(f'{output_path}/weights.csv')
+	# reweighting every field every night is probably overkill (note that I haven't actually tested this, and to get the best representation of your light curve with a given est of data you probably WOULD want to reweight)
+	# use an adaptive criterion to determine if the weighting should be done and written to disk OR restored from disk: 
+	#	if we have less than 10 days on the field, reweight 
+	#	if we have between 5 and 30 days on the field and len(dates) % 5 == 0, reweight (i.e., run on 10, 15, 20, 25, 30 days)
+	#	if we have 30 or more nights of data and len(dates) % 10 == 0, reweight (i.e., 30, 40, 50, 60, etc. days)
+	reweight = False
+	if len(dates) < 10: # if we have less than 10 nights of data on the field, reweight 
+		reweight = True
+	elif 10 <= len(dates) < 30: # if we have between 10 and 30 nights, reweight if modulo 5 == 0
+		if len(dates) % 5 == 0:
+			reweight = True
+	elif len(dates) >= 30:
+		if len(dates) % 10 == 0:
+			reweight = True	
+	if reweight or force_reweight: # force_reweight is an argument passed by the user to make allow the reweighting to happen even if the reweight criteria above are not met
+		print(f'Weighting {len(ref_inds)} reference stars...')
+		weights_arr = np.zeros((len(ref_inds), n_dfs))
+		for i in range(n_dfs):
+			print(f'{i+1} of {n_dfs}')
+			flux_arr = binned_flux[i][:,ref_inds]
+			flux_err_arr = binned_flux_err[i][:,ref_inds]
+			nl_flag_arr = binned_nl_flags[i][:,ref_inds]
+			weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+			weights_arr[:, i] = weights
+	else:
+		# otherwise, read in existing reference star weights
+		weights_df = pd.read_csv(f'{output_path}/weights.csv')
+		weights_arr = np.zeros((len(weights_df), len(weights_df.keys())-1))
+		i = 0 
+		for key in weights_df.keys()[1:]:
+			weights_arr[:,i] = weights_df[key]	
+			i += 1
+
+
+	if reweight or force_reweight:
+		# save a csv with the weights to the light curve directory 
+		weights_dict = {'Ref ID':common_source_ids[ref_inds]}
+		for i in range(n_dfs):
+			ap_size = phot_files[i].split('/')[-1].split('_')[-1].split('.parquet')[0]
+			weights_dict[ap_size] = weights_arr[:,i]
+		weights_df = pd.DataFrame(weights_dict)
+		weights_df.to_csv(f'{output_path}/weights.csv', index=0)
+		set_tierras_permissions(f'{output_path}/weights.csv')
 	
 	# reevaluate bin_inds to be the indices on each night. The optimal photometric aperture will be chosen based on which one minimizes sigma_n2n
 	bin_inds = []
