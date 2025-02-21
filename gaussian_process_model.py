@@ -24,6 +24,11 @@ def main(raw_args=None):
             parameter_names = ('log_a', 'log_b', 'log_c', 'log_P')
             def get_real_coefficients(self, params):
                 log_a, log_b, log_c, log_P = params 
+                # these functions came from https://celerite.readthedocs.io/en/stable/python/kernel/
+                # to convert to the form in the celerite paper, you would do 
+                # a -> B
+                # b -> C
+                # c -> 1/L
                 b = np.exp(log_b)
                 return (np.exp(log_a)*(1.0+b)/(2.0+b), np.exp(log_c))
             
@@ -59,9 +64,14 @@ def main(raw_args=None):
         P_guess = per[np.argmax(power)]
 
         # TODO: set bounds on P using width of peak instead of sqrt guess that I've used here
+        # bounds = dict(log_a=(-10, 0),
+        #        log_b=(-20, 20), 
+        #        log_c=(-20, -17),
+        #        log_P=(np.log(P_guess-np.sqrt(P_guess)), np.log(P_guess+np.sqrt(P_guess)))) 
+        
         bounds = dict(log_a=(-10, 0),
-                log_b=(-20, 20), 
-                log_c=(-20, -17),
+                log_b=(-5, 5), 
+            log_c=(-20.0, -17),
                 log_P=(np.log(P_guess-np.sqrt(P_guess)), np.log(P_guess+np.sqrt(P_guess)))) 
 
         kernel = CustomTerm(log_a=-2, log_b=0.5, log_c=-19, log_P=np.log(P_guess), bounds=bounds)
@@ -243,11 +253,11 @@ def main(raw_args=None):
         by[i] = np.median(y[inds])
         bye[i] = np.std(y[inds])/np.sqrt(len(y[inds]))
 
-    gp, gp_sampler = gp_mcmc(x, y, y_err, 1000)
+    gp, gp_sampler = gp_mcmc(x, y, y_err, 2000)
     samples = gp_sampler.flatchain
     random_samps = samples[np.random.randint(len(samples), size=200)]
 
-    x_model = np.linspace(min(x), max(x), 10000)
+    x_model = np.linspace(min(x)-100, max(x)+100, 10000)
     cm = plt.get_cmap('viridis')
     random_sample_color = 120
     fig, ax = plt.subplots(1, 1, figsize=(14,5), sharey=True, sharex='col')

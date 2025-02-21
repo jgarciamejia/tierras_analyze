@@ -10,6 +10,7 @@ import argparse
 from ap_phot import t_or_f
 from scipy.signal import find_peaks
 import os 
+import matplotlib
 
 def sine_model(x, a, c):
     return a*np.sin(2*np.pi*x+c)+1
@@ -55,11 +56,11 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         y = y[use_inds]
         y_err = y_err[use_inds]
 
-        v, l, h = sigmaclip(y_err[~np.isnan(y_err)])
-        use_inds = np.where(y_err<h)[0]
-        x = x[use_inds]
-        y = y[use_inds]
-        y_err = y_err[use_inds] 
+        # v, l, h = sigmaclip(y_err[~np.isnan(y_err)])
+        # use_inds = np.where(y_err<h)[0]
+        # x = x[use_inds]
+        # y = y[use_inds]
+        # y_err = y_err[use_inds] 
 
     x_offset = x[0]
     x -= x_offset
@@ -121,7 +122,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
         phased_y_err = y_err[sort]
 
         ax4.scatter(phased_x, phased_y, c=color[sort], s=5)
-        ax4.errorbar(phased_x, phased_y, phased_y_err, linestyle="None",marker='',color=color[sort],zorder=0)
+        ax4.errorbar(phased_x, phased_y, phased_y_err, linestyle="None",marker='',ecolor=color[sort],zorder=0)
         ax4.set_xlabel('Phase', fontsize=14)
         ax4.set_ylabel('Normalized Flux', fontsize=14)
         ax4.grid(alpha=0.7)
@@ -177,7 +178,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
     ax4.tick_params(labelsize=12)
 
     if color_by_time: 
-        cmap = plt.get_cmap('viridis')
+        cmap = matplotlib.colormaps['viridis']
         inds = np.arange(len(x))
         color_inds = np.array([int(i) for i in inds*255/len(x)])
         color = cmap(color_inds)
@@ -185,7 +186,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
         color='#b0b0b0'
 
     ax1.scatter(x, y, c=color, s=2)
-    ax1.errorbar(x, y, y_err, linestyle="None",marker='',color=color,zorder=0)
+    ax1.errorbar(x, y, y_err, linestyle="None",marker='',ecolor=color,zorder=0)
     ax1.set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
@@ -222,7 +223,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
     phased_y_err = y_err[sort]
 
     ax4.scatter(phased_x, phased_y, c=color[sort], s=5)
-    ax4.errorbar(phased_x, phased_y, phased_y_err, linestyle="None",marker='',color=color[sort],zorder=0)
+    ax4.errorbar(phased_x, phased_y, phased_y_err, linestyle="None",marker='',ecolor=color[sort],zorder=0)
     ax4.set_xlabel('Phase', fontsize=14)
     ax4.set_ylabel('Normalized Flux', fontsize=14)
     ax4.grid(alpha=0.7)
