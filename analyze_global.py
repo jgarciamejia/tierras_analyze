@@ -665,7 +665,7 @@ def main(raw_args=None):
 			bin_inds.append(np.arange(i*ppb, (i+1)*ppb))
 		else:
 			bin_inds.append(np.arange(i*ppb, n_ims))
-	bin_inds = np.array(bin_inds)
+	bin_inds = np.array(bin_inds, dtype='object')
 
 	binned_times = np.zeros(len(bin_inds))
 	binned_airmass = np.zeros_like(binned_times)
@@ -674,7 +674,8 @@ def main(raw_args=None):
 	binned_flux_err = np.zeros_like(binned_flux)
 	binned_nl_flags = np.zeros_like(binned_flux, dtype='int')
 	for i in range(n_bins):
-		non_masked_inds = bin_inds[i][~mask[bin_inds[i]]] # mask out potentially bad points for calculating weights
+		non_masked_inds = bin_inds[i][~mask[bin_inds[i].astype(int)]].astype(int) # mask out potentially bad points for calculating weights
+
 		binned_times[i] = np.mean(times[non_masked_inds])
 		binned_airmass[i] = np.mean(airmasses[non_masked_inds])
 		binned_exposure_time[i] = np.nansum(exposure_times[non_masked_inds])
@@ -799,7 +800,9 @@ def main(raw_args=None):
 				weights = copy.deepcopy(weights_arr[:,i])
 
 			# cut to weights that are not 0 for efficiency (also adjust ref_inds to reflect this)	
-			ref_inds_loop = ref_inds[np.where(weights != 0)[0]]
+			non_zero_weight_inds = np.where(weights != 0)[0]
+			ref_inds_loop = np.array([ref_inds[i] for i in non_zero_weight_inds if i in ref_inds]) 
+			
 			weights = weights[ref_inds_loop]
 
 			# mearth_style_times[i] = time.time()-tmearth
@@ -857,13 +860,18 @@ def main(raw_args=None):
 				best_phot_file = i 
 				best_corr_flux = corr_flux
 				best_corr_flux_err = corr_flux_err
+				best_raw_flux = target_flux
+				best_raw_flux_err = target_flux_err
 				best_alc = alc
 				best_alc_err = alc_err
-		
+
+		# if best_corr_flux is None: 
+		# 	breakpoint()
+				
 		if best_corr_flux is not None:
 			
 			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask}
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask}
 			
 			if ap_rad is not None:
 				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
