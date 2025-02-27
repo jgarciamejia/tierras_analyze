@@ -133,6 +133,20 @@ def main(raw_args=None):
 					break
 		date_list = date_list[dates_to_keep]
 
+	# user can specify dates to ignore in ignore_dates.txt
+	if os.path.exists(f'/data/tierras/fields/{field}/ignore_dates.txt'):
+		with open(f'/data/tierras/fields/{field}/ignore_dates.txt') as f:
+			ignore_dates = f.readlines()
+		ignore_dates = [i.strip() for i in ignore_dates]
+		delete_inds = []
+		for i in range(len(date_list)):
+			date = date_list[i].split('/')[4]
+			if date in ignore_dates:
+				delete_inds.append(i)
+				print(f'Ignoring {date} as specified in /data/tierras/fields/{field}/ignore_dates.txt!')
+
+		date_list = np.delete(date_list, delete_inds)
+
 	# # loop over the dates and get the pointing in each image; remove dates where the median pointing is off 
 	# ras = []
 	# decs = []

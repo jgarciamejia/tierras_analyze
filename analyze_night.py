@@ -890,7 +890,7 @@ def main(raw_args=None):
 	weights_df.to_csv(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_weights.csv', index=0)
 	set_tierras_permissions(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_weights.csv')
 	
-	ppb = 5 # set up bins for evaluating stddevs of lcs
+	ppb = 2 # set up bins for evaluating stddevs of lcs
 	n_bins = int(np.ceil(n_ims/ppb))
 	bin_inds = []
 	for i in range(n_bins):

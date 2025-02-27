@@ -68,9 +68,9 @@ def aov(times, flux, flux_err):
 
 if __name__ == '__main__':
 
-    target ='TOI-2364'
+    target ='TIC384984325'
 
-    lc_path = f'/data/tierras/fields/TOI-2364/sources/lightcurves/flat0000/{target}_global_lc.csv'
+    lc_path = f'/data/tierras/fields/{target}/sources/lightcurves/flat0000/{target}_global_lc.csv'
     df = pd.read_csv(lc_path, comment='#')
     times = np.array(df['BJD TDB'])
     flux = np.array(df['Flux'])
@@ -117,7 +117,7 @@ if __name__ == '__main__':
     # ax[2].plot(phased_times, phased_flux, marker='.', ls='')
     
     # ax[2].set_title(f'Folded on {best_per:.5} d')
-    res_dict = periodbase.saov.aov_periodfind(times, flux, flux_err, magsarefluxes=True, startp=1, endp=30, stepsize=1/86400, autofreq=False)
+    res_dict = periodbase.saov.aov_periodfind(times, flux, flux_err, magsarefluxes=True, startp=1, endp=5, stepsize=10/86400, autofreq=False)
     ax[1].plot(res_dict['periods'], res_dict['lspvals'], marker='.')
 
     best_per = res_dict['bestperiod']

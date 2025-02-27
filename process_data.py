@@ -69,8 +69,11 @@ if not skip_photometry:
             continue
         if 'TEST' in target:
             continue
+        # TODO: how to automatically set the rp_mag_limit for really faint/bright targets?
         if target == 'POI-2':
             rp_mag_limit = 17.06
+        if target == 'HD60779':
+            rp_mag_limit = 14
         else:
             rp_mag_limit = 17.00
         args = f'-target {target} -date {date} -ffname {ffname} -rp_mag_limit {rp_mag_limit} -ap_radii {" ".join(map(str,ap_radii))} -phot_type {phot_type} -plot_source_detection False'

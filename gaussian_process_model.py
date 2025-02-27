@@ -15,7 +15,7 @@ from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks, peak_widths 
 
 def main(raw_args=None):
-    def gp_mcmc(x, y, y_err, nsteps):
+    def gp_mcmc(x, y, y_err, nsteps, P_guess=None):
         def neg_log_like(params, y, gp):
             gp.set_parameter_vector(params)
             return -gp.log_likelihood(y)
@@ -58,11 +58,13 @@ def main(raw_args=None):
 
         global best_log_prob, theta_save_gp, prob_save 
 
-        # use a Lomb Scargle to get a constraint on P 
-        freq, power = LombScargle(x, y, y_err).autopower()
-        per = 1/freq
-        P_guess = per[np.argmax(power)]
-
+        # If user has not passed a P_guess, estimate from periodogram
+        if P_guess is None:
+            # use a Lomb Scargle to get a constraint on P 
+            freq, power = LombScargle(x, y, y_err).autopower()
+            per = 1/freq
+            P_guess = per[np.argmax(power)]
+        
         # TODO: set bounds on P using width of peak instead of sqrt guess that I've used here
         # bounds = dict(log_a=(-10, 0),
         #        log_b=(-20, 20), 
@@ -109,6 +111,7 @@ def main(raw_args=None):
     ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
     ap.add_argument('-quality_mask', required=False, default='False', type=str)
     ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
+    ap.add_argument('-P_guess', required=False, default=None, type=float, help='If passed, will use P_guess instead of periodogram peak to initialize MCMC and set bounds on P.')
 
     args = ap.parse_args(raw_args)
     field = args.field
@@ -117,6 +120,7 @@ def main(raw_args=None):
     median_filter_w = args.median_filter_w
     quality_mask = t_or_f(args.quality_mask)
     sc = t_or_f(args.sigmaclip)
+    P_guess = args.P_guess
 
     if gaia_id is None:
         target = field 
@@ -253,7 +257,7 @@ def main(raw_args=None):
         by[i] = np.median(y[inds])
         bye[i] = np.std(y[inds])/np.sqrt(len(y[inds]))
 
-    gp, gp_sampler = gp_mcmc(x, y, y_err, 2000)
+    gp, gp_sampler = gp_mcmc(x, y, y_err, 2000, P_guess=P_guess)
     samples = gp_sampler.flatchain
     random_samps = samples[np.random.randint(len(samples), size=200)]
 
