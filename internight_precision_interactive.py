@@ -205,7 +205,7 @@ def main(raw_args=None):
 	# set some constants
 	GAIN = 5.9 # e- ADU^-1
 	PLATE_SCALE = 0.432 # " pix^-1
-	bin_mins = 20 # size of bins in minutes for the binned panel
+	bin_mins = 0.1 # size of bins in minutes for the binned panel
 	contamination_limit = 0.1 
 	contaminant_grid_size = 50
 	grid_radius_arcsec = np.sqrt(2*(contaminant_grid_size/2)**2) * PLATE_SCALE # arcsec
@@ -553,7 +553,9 @@ def main(raw_args=None):
 	axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4', ax5:'ax5'}
 
 	ax1.set_title(f'Native cadence ({exp_time} s)', fontsize=14)
-	ax1.plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{read}^2+\sigma_{scintillation}^2}}$', zorder=1)
+	# ax1.plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$ = $\sqrt{\sigma_{source}^2+\sigma_{sky}^2+\sigma_{read}^2+\sigma_{scintillation}^2}}$', zorder=1)
+	ax1.plot(rp_mag_grid, total_noise_model*1e6, lw=2, label='$\sigma_{total}$', zorder=1)
+
 	ax1.plot(rp_mag_grid, source_photon_noise*1e6, label='$\sigma_{source}$', zorder=1)
 	ax1.plot(rp_mag_grid, sky_photon_noise*1e6, label='$\sigma_{sky}$', zorder=1)
 	ax1.plot(rp_mag_grid, read_noise*1e6, label='$\sigma_{read}$', zorder=1)
@@ -570,7 +572,7 @@ def main(raw_args=None):
 	ax1.set_ylabel('$\sigma$ (ppm)', fontsize=14)
 	ax1.set_yscale('log')
 	ax1.grid(True, which='both', alpha=0.5)
-	ax1.set_xlim(10.6,np.ceil(np.nanmax(rp_mags))+0.1)
+	ax1.set_xlim(np.floor(np.nanmin(rp_mags))-0.1, np.ceil(np.nanmax(rp_mags))+0.1)
 	ax1.tick_params(labelsize=12)
 	ax1.legend()
 
@@ -613,10 +615,12 @@ def main(raw_args=None):
 	ax3.plot(rp_mag_grid, scintillation_noise*1e6/np.sqrt(ppb), label='Scintillation')
 	ax3.plot(rp_mag_grid, pwv_noise*1e6, label='PWV')
 	ax3.grid(True, which='both', alpha=0.5)
-	ax3.set_title(f'Binned ({ppb} min)', fontsize=14)
+	ax3.set_title(f'Binned ({ppb} points-per-bin)', fontsize=14)
 	ax3.set_xlabel('$G_{\mathrm{RP}}$', fontsize=14)
 	ax3.tick_params(labelsize=12)
 	ax3.set_ylim(100, 3e5)
+	ax3.set_xlim(np.floor(np.nanmin(rp_mags))-0.1, np.ceil(np.nanmax(rp_mags))+0.1)
+
 
 	# initialize ax2
 	ax2.grid(alpha=0.5)
