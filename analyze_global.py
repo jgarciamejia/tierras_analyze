@@ -883,9 +883,8 @@ def main(raw_args=None):
 		# 	breakpoint()
 				
 		if best_corr_flux is not None:
-			
 			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask}
+			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask, 'Saturated Flag':saturated_flags[best_phot_file,:,tt].astype(int), 'Non-Linear Flag':non_linear_flags[best_phot_file,:,tt].astype(int)}
 			
 			if ap_rad is not None:
 				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
