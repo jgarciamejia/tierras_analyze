@@ -74,8 +74,7 @@ def periodogram(x, y, y_err, pers=None, sc=False):
 
     return x, y, y_err, pers, freqs, power, x_offset
 
-def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_by_time=False):
-
+def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baseline_restarts=False, color_by_time=False):
     def on_click(event):
         ''' allow the user to click on different periodogram peaks and phase on them '''
 
@@ -187,6 +186,9 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_b
 
     ax1.scatter(x, y, c=color, s=2)
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',ecolor=color,zorder=0)
+    if baseline_restarts:
+        for i in range(len(baseline_dates)):
+            ax1.axvline(baseline_dates[i]-x_offset, color='r', alpha=0.6)
     ax1.set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
@@ -282,7 +284,7 @@ def main(raw_args=None):
     ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')
     ap.add_argument('-per_hi', required=False, default=100, type=float, help='Upper period (in days) to use to establish frequency grid IF autofreq is False.')
     ap.add_argument('-per_resolution', required=False, default=15/86400, type=float, help='Period resolution (in days) to use to establish frequency grid IF autofreq is False.')
-
+    ap.add_argument('-baseline_restarts', required=False, default='True', type=str, help='Re-baseline the data using the camera restart dates in /data/tierras/fields/camera_restart_dates.csv')
     args = ap.parse_args(raw_args)
     field = args.field
     gaia_id = args.gaia_id
@@ -294,7 +296,7 @@ def main(raw_args=None):
     per_lower = args.per_low
     per_upper = args.per_hi
     per_res = args.per_resolution
-
+    baseline_restarts = t_or_f(args.baseline_restarts)
     if gaia_id is None:
         target = field 
     else:
@@ -373,6 +375,24 @@ def main(raw_args=None):
     norm = np.nanmedian(y)
     y /= norm 
     y_err /= norm 
+    
+    if baseline_restarts:
+        baseline_df = pd.read_csv('/data/tierras/fields/camera_restart_dates.csv', comment='#')
+        global baseline_dates
+        baseline_dates = np.array(baseline_df['jd'])
+        for i in range(len(baseline_dates)+1):
+            if i == 0:
+                x_start = x[0]
+            else:
+                x_start = baseline_dates[i-1]
+            if i == len(baseline_dates):
+                x_end = x[-1]
+            else:
+                x_end = baseline_dates[i]
+            inds = np.where((x >= x_start) & (x <= x_end))[0]
+            norm = np.nanmedian(y[inds])
+            y[inds] /= norm 
+            y_err[inds] /= norm 
  
     if median_filter_w != 0:
         print(f'Median filtering target flux with a filter width of {median_filter_w} days.')
@@ -389,7 +409,7 @@ def main(raw_args=None):
 
     # calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(x, np.ones_like(x), fit_mean=False, center_data=False).power(freq)
-    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, color_by_time=True)
+    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baseline_restarts, color_by_time=True)
 
     return fig, ax, power
 
