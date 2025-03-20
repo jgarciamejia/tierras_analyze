@@ -441,6 +441,8 @@ def main(raw_args=None):
 			continue 
 		phot_files = sorted(phot_files, key=lambda x:float(x.split('_')[-1].split('.')[0])) # sort on aperture size so everything is in order
 
+		phot_files = [i for i in phot_files if 'variable' not in i] #TODO: this line forces the use of fixed aperture photometry only. Want this to operate more generally, but for now we're only using fixed apertures
+
 		if ap_rad is not None:
 			phot_file_radii = np.array([float(i.split('/')[-1].split('_')[-1].split('.parquet')[0]) for i in phot_files])
 			df_ind = np.where(phot_file_radii == ap_rad)[0][0]
