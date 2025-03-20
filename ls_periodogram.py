@@ -66,7 +66,7 @@ def periodogram(x, y, y_err, pers=None, sc=False):
     x -= x_offset
 
     if pers is None:
-        freqs, power = LombScargle(x, y, y_err).autopower()
+        freqs, power = LombScargle(x, y, y_err).autopower(maximum_frequency=1/per_lower)
         pers = 1/freqs
     else:
         freqs = 1/pers
@@ -188,7 +188,8 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baselin
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',ecolor=color,zorder=0)
     if baseline_restarts:
         for i in range(len(baseline_dates)):
-            ax1.axvline(baseline_dates[i]-x_offset, color='r', alpha=0.6)
+            if x[0] < baseline_dates[i]-x_offset < x[-1]: # only plot if it falls within the time range of observations 
+                ax1.axvline(baseline_dates[i]-x_offset, color='r', alpha=0.6)
     ax1.set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
@@ -293,6 +294,7 @@ def main(raw_args=None):
     quality_mask = t_or_f(args.quality_mask)
     sc = t_or_f(args.sigmaclip)
     autofreq = t_or_f(args.autofreq)
+    global per_lower, per_upper 
     per_lower = args.per_low
     per_upper = args.per_hi
     per_res = args.per_resolution
@@ -346,7 +348,7 @@ def main(raw_args=None):
             dur = ephem_df['duration'][i]
             start_n = int(np.ceil((x[0]-t0)/per))
             end_n = int(np.floor(x[-1]-t0)/per)
-            tn = t0 + per*np.arange(start_n, end_n+1)
+            tn = t0 + per*np.arange(start_n, end_n+2)
             transit_inds = np.ones_like(x, dtype='bool')
             for j in range(len(tn)):
                 transit_inds[np.where((x > tn[j]-dur/2) & (x < tn[j] + dur/2))[0]] = False
@@ -358,6 +360,7 @@ def main(raw_args=None):
             pos_flag = pos_flag[transit_inds]
             fwhm_flag = fwhm_flag[transit_inds]
             flux_flag = flux_flag[transit_inds]
+            breakpoint()
 
     if quality_mask: 
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag))[0]
