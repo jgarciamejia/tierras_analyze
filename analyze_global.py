@@ -183,15 +183,7 @@ def main(raw_args=None):
 		date_list = np.delete(date_list, dates_to_remove)		
 
 	# dates = dates[0:18]
-	# date_list = date_list[0:18]
-
-	if field == 'LHS2919':
-		bad_dates = ['20240530', '20240531', '20240601', '20240602']
-		dates_to_remove = []
-		for i in range(len(bad_dates)):
-			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
-		dates = np.delete(dates, dates_to_remove)
-		date_list = np.delete(date_list, dates_to_remove)		
+	# date_list = date_list[0:18]	
 
 	# determine the average field pointing on the first night so we can query for *all* sources
 	if cut_contaminated:
@@ -229,15 +221,18 @@ def main(raw_args=None):
 	# read in the source df's from each night 
 	source_dfs = []
 	source_ids = []
+	source_gaia_rp = []
 	for i in range(len(date_list)):
 		source_file = glob(date_list[i]+'/**sources.csv')[0]
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
+		source_gaia_rp.append(list(source_dfs[i]['phot_rp_mean_mag']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
 	
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
+	common_gaia_rp = np.array(source_gaia_rp[0])
 
 	# remove sources if they don't have photometry on all other nights
 	inds_to_remove = []
@@ -248,6 +243,7 @@ def main(raw_args=None):
 	if len(inds_to_remove) > 0:
 		inds_to_remove = np.array(inds_to_remove)
 		common_source_ids = np.delete(common_source_ids, inds_to_remove)
+		common_gaia_rp = np.delete(common_gaia_rp, inds_to_remove)
 
 	
 	# get the index mapping between the source dfs and the photometry source names
@@ -288,6 +284,15 @@ def main(raw_args=None):
 		breakpoint()
 		raise RuntimeError('Could not identify Gaia DR3 source_id of Tierras target.')
 	
+	# write out csv of the sources that we'll produce global light curves for
+	# TODO: Add more info besides Gaia ID / RP mag
+	source_output_path = f'/data/tierras/fields/{field}/sources/{field}_common_sources.csv'
+	if os.path.exists(source_output_path): # clear out 
+		os.remove(source_output_path)
+	source_output_dict = {'source_id':common_source_ids, 'phot_rp_mean_mag':common_gaia_rp}
+	source_output_df = pd.DataFrame(source_output_dict)
+	source_output_df.to_csv(source_output_path, index=0)
+
 	if cut_contaminated:
 		contaminant_grid_size = 50 # pix 
 		PLATE_SCALE = 0.432 # arcsec pix^-1
@@ -557,7 +562,8 @@ def main(raw_args=None):
 	
 	# mask on median flux; we dont want to include exposures that are low flux due to clouds, field shifts, WCS errors, etc.
 	flux_mask = np.zeros(len(fwhm_x), dtype='int')
-	flux_inds = np.where(median_flux < 0.5)[0]
+	flux_inds = np.where(median_flux < 0.9)[0]
+	# flux_inds = np.where(median_flux < 0.5)[0]
 	flux_mask[flux_inds] = 1
 	
 	# also mask on x/y pixel positions; we don't want images with large position excursions
