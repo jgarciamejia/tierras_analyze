@@ -231,7 +231,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baselin
     ax4.set_ylabel('Normalized Flux', fontsize=14)
     ax4.grid(alpha=0.7)
 
-    model_times = np.linspace(phased_x[0], phased_x[-1], 10000)
+    model_times = np.arange(phased_x[0], phased_x[-1], 0.001)
     model_amp = 0.05
     model_phase = 0
     model_offset = 1
@@ -262,7 +262,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baselin
     ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='#b0b0b0', label='Best-fit sine model')
 
     # add plot of unphased model to first panel
-    unphased_model_times = np.linspace(x[0], x[-1], 10000)
+    unphased_model_times = np.arange(x[0], x[-1], 0.001)
     unphased_model = params[0]*np.sin(2*np.pi*unphased_model_times/best_per+params[1])+1
     ax1.plot(unphased_model_times, unphased_model, color='#b0b0b0', zorder=0)
 
@@ -360,7 +360,6 @@ def main(raw_args=None):
             pos_flag = pos_flag[transit_inds]
             fwhm_flag = fwhm_flag[transit_inds]
             flux_flag = flux_flag[transit_inds]
-            breakpoint()
 
     if quality_mask: 
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag))[0]
