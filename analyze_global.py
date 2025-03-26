@@ -117,6 +117,21 @@ def main(raw_args=None):
 	existing_lc_files = glob(lc_path+'*_lc.csv')
 	for i in range(len(existing_lc_files)):
 		os.remove(existing_lc_files[i])
+	
+	# create a 'lightcurves' directory for output
+	output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}')
+	if not os.path.exists(output_path.parent.parent.parent):
+		os.mkdir(output_path.parent.parent.parent)
+		set_tierras_permissions(output_path.parent.parent.parent)
+	if not os.path.exists(output_path.parent.parent):
+		os.mkdir(output_path.parent.parent)
+		set_tierras_permissions(output_path.parent.parent)
+	if not os.path.exists(output_path.parent):
+		os.mkdir(output_path.parent)
+		set_tierras_permissions(output_path.parent)
+	if not os.path.exists(output_path):
+		os.mkdir(output_path)
+		set_tierras_permissions(output_path)
 
 	# identify dates on which this field was observed 
 	date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')	
@@ -719,20 +734,7 @@ def main(raw_args=None):
 		ref_inds = np.arange(len(common_source_ids))
 
 
-	# create a 'lightcurves' directory for output
-	output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}')
-	if not os.path.exists(output_path.parent.parent.parent):
-		os.mkdir(output_path.parent.parent.parent)
-		set_tierras_permissions(output_path.parent.parent.parent)
-	if not os.path.exists(output_path.parent.parent):
-		os.mkdir(output_path.parent.parent)
-		set_tierras_permissions(output_path.parent.parent)
-	if not os.path.exists(output_path.parent):
-		os.mkdir(output_path.parent)
-		set_tierras_permissions(output_path.parent)
-	if not os.path.exists(output_path):
-		os.mkdir(output_path)
-		set_tierras_permissions(output_path)
+	
 
 	# reweighting every field every night is probably overkill (note that I haven't actually tested this, and to get the best representation of your light curve with a given est of data you probably WOULD want to reweight)
 	# use an adaptive criterion to determine if the weighting should be done and written to disk OR restored from disk: 
@@ -782,7 +784,10 @@ def main(raw_args=None):
 	bin_inds = []
 	for i in range(len(times_list)):
 		bin_inds.append(np.where((times >= times_list[i][0]) & (times <= times_list[i][-1]))[0])
-	
+
+	# pre compute the scintillation
+	sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exposure_times)**(-1/2)*np.exp(-2306/8000)
+
 	for tt in range(len(common_source_ids)):
 		tloop = time.time()
 		if common_source_ids[tt] == tierras_target_id:
@@ -795,22 +800,14 @@ def main(raw_args=None):
 			plot = False 
 		
 		print(f'Doing {target}, source {tt+1} of {len(common_source_ids)}.')
-		# ref_gaia_ids = ref_selection(target_gaia_id, source_dfs[0], common_source_ids, max_refs=100)
-		# inds = np.where(target_gaia_id == common_source_ids)[0]
-		# for i in range(len(ref_gaia_ids)):
-		# 	inds = np.append(inds, np.where(ref_gaia_ids[i] == common_source_ids)[0])
 
 		med_stddevs = np.zeros(n_dfs)
 		best_med_stddev = 9999999.
-		mearth_style_times = np.zeros(n_dfs)
+		# mearth_style_times = np.zeros(n_dfs)
 		best_corr_flux = None
+
+		# CAN WE REPLACE THIS LOOP WITH MATRIX MULTIPLICATION?
 		for i in range(n_dfs):			
-			# tmearth = time.time()
-			# flux_arr = binned_flux[i][:,inds]
-			# flux_err_arr = binned_flux_err[i][:,inds]
-			# nl_flag_arr = binned_nl_flags[i][:,inds]
-			# weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time)
-			
 			# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
 			if target_gaia_id in ref_gaia_ids:
 				if i == 0:
@@ -854,7 +851,6 @@ def main(raw_args=None):
 
 			# inflate error by scintillation estimate (see Stefansson et al. 2017)
 			n_refs = len(np.where(weights != 0)[0])
-			sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exposure_times)**(-1/2)*np.exp(-2306/8000)
 			sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
 			corr_flux_err = np.sqrt(rel_flux_err**2 + sigma_scint**2)
 
@@ -911,7 +907,7 @@ def main(raw_args=None):
 
 			gc.collect() # do garbage collection to prevent memory leaks 
 			print(f'tloop: {time.time()-tloop:.1f}')
-			avg_mearth_times[tt] = np.mean(mearth_style_times)
+			# avg_mearth_times[tt] = np.mean(mearth_style_times)
 			# print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
 		
 if __name__ == '__main__':

@@ -18,15 +18,19 @@ ap.add_argument("-single_field", required=False, default='', help="If passed, ru
 ap.add_argument("-start_field", required=False, default='', help="If you pass a name, the code will skip all targets in the target list preceding the passed field. This is just for convenience if you need to stop running the code in-person and start running in a remote session, or if the code crashes halway through.")
 ap.add_argument("-skip_photometry", required=False, default='False', help="If True, skip photometry step (for testing)")
 ap.add_argument("-force_reweight", required=False, default='False', help="If True, force the reweighting of the reference stars for every field in the target list.")
+ap.add_argument('-date', required=False, default=None, help='Date of data to process. If not passed, will default to last night.' )
 
 args = ap.parse_args()
 single_field = args.single_field
 start_field = args.start_field
 skip_photometry = t_or_f(args.skip_photometry)
 force_reweight = t_or_f(args.force_reweight)
+date = args.date 
 
-last_night = (Time(datetime.now()) - 1).value
-date = str(last_night.year)+str(last_night.month).zfill(2)+str(last_night.day).zfill(2)
+# if no date was passed, grab last night's date
+if date is None:
+    last_night = (Time(datetime.now()) - 1).value
+    date = str(last_night.year)+str(last_night.month).zfill(2)+str(last_night.day).zfill(2)
 
 # specify the date list
 ffname = 'flat0000'

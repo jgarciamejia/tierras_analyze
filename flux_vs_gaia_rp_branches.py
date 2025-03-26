@@ -39,8 +39,9 @@ def main(raw_args=None):
         path = global_lcs[i]
         if field in path.split('/')[-1]:
             target_ind = i
-            target= field
-            gaia_id = target_gaia_id = identify_target_gaia_id(target)
+            target = field
+            breakpoint()
+            gaia_id = identify_target_gaia_id(target, x_pix=targ_x_pix, y_pix=targ_y_pix)
         else:
             gaia_id = int(global_lcs[i].split('/')[-1].split('_')[0].split(' ')[-1])
 
@@ -51,12 +52,22 @@ def main(raw_args=None):
         raw_flux = raw_flux[nan_inds]
         raw_flux_err = raw_flux_err[nan_inds]
 
-        source_ind = np.where(sources_df['source_id'] == gaia_id)[0][0]
+        try:
+            source_ind = np.where(sources_df['source_id'] == gaia_id)[0][0]
+        except:
+            gaia_rps[i] = np.nan 
+            median_fluxes[i] = np.nan 
+            print(f'could not find corresponding entry for Gaia DR3 {gaia_id} in the sources csv')
+            continue 
+        
         gaia_rps[i] = sources_df['phot_rp_mean_mag'][source_ind]
 
         v, lo, hi = sigmaclip(raw_flux)
         median_fluxes[i] = np.median(v)
     
+    plt.plot(gaia_rps, median_fluxes, 'k.')
+    plt.plot(gaia_rps[target_ind], median_fluxes[target_ind], 'ro')
+    plt.yscale('log')
     breakpoint()
 
 
