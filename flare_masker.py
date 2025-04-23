@@ -31,7 +31,10 @@ def flare_masker(x_list, x, y, threshold=2):
     for i in range(len(x_list)):
 
         # grab the ith night of data
-        night_inds = np.where((x>=x_list[i][0])&(x<=x_list[i][-1]))[0]
+        try:
+            night_inds = np.where((x>=x_list[i][0])&(x<=x_list[i][-1]))[0]
+        except: # handles case where you're treating data set as one "night"
+            night_inds = np.where((x>=x_list[0])&(x<=x_list[-1]))[0] 
         x_ = x[night_inds]
         y_ = y[night_inds]
 

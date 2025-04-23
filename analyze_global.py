@@ -32,6 +32,9 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord
 import astropy.units as u 
 from astropy.visualization import simple_norm 
+from astropy.utils.iers import conf
+conf.auto_max_age = None
+
 
 def identify_target_gaia_id(target, sources=None, x_pix=None, y_pix=None):
 		
@@ -87,7 +90,6 @@ def main(raw_args=None):
 	ap.add_argument("-ffname", required=False, default='flat0000', help="Name of folder in which to store reduced+flattened data. Convention is flatXXXX. XXXX=0000 means no flat was used.")
 	ap.add_argument("-email", required=False, default=False, help="Whether or not to send email with summary plots.")
 	ap.add_argument("-plot", required=False, default=False, help="Whether or not to generate a summary plot to the target's /data/tierras/targets directory")
-	ap.add_argument("-SAME", required=False, default=False, help="whether or not to run SAME analysis")
 	ap.add_argument("-use_nights", required=False, default=None, help="Nights to be included in the analysis. Format as chronological comma-separated list, e.g.: 20240523, 20240524, 20240527")
 	ap.add_argument("-minimum_night_duration", required=False, default=0, help="Minimum cumulative exposure time on a given night (in hours) that a night has to have in order to be retained in the analysis (AFTER SAME RESTRICTIONS HAVE BEEN APPLIED).", type=float)
 	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
@@ -100,7 +102,6 @@ def main(raw_args=None):
 	ffname = args.ffname
 	email = t_or_f(args.email)
 	plot = t_or_f(args.plot)
-	same = t_or_f(args.SAME)
 	force_reweight = t_or_f(args.force_reweight)
 	minimum_night_duration = args.minimum_night_duration
 	ap_rad = args.ap_rad	
@@ -573,7 +574,11 @@ def main(raw_args=None):
 	x_deviations = np.median(x - np.nanmedian(x, axis=0), axis=1)
 	y_deviations = np.median(y - np.nanmedian(y, axis=0), axis=1)
 	median_sky = np.median(sky, axis=1)/exposure_times
-	median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1))
+	
+	if ap_rad is not None: 
+		median_flux = np.nanmedian(flux[0],axis=1)/np.nanmedian(np.nanmedian(flux[0],axis=1)) # if ap_rad passed, evaluate median flux in that aperture
+	else:
+		median_flux = np.nanmedian(flux[5],axis=1)/np.nanmedian(np.nanmedian(flux[5],axis=1)) # otherwise, compute median flux of all stars with 10-pixel aperture
 	
 	# mask on median flux; we dont want to include exposures that are low flux due to clouds, field shifts, WCS errors, etc.
 	flux_mask = np.zeros(len(fwhm_x), dtype='int')
@@ -591,35 +596,20 @@ def main(raw_args=None):
 	fwhm_inds = np.where(fwhm_x > 4)[0]
 	fwhm_mask[fwhm_inds] = 1
 
-	# optionally restrict to SAME 
-	same_mask = np.zeros(len(fwhm_x), dtype='int')
-	if same: 
-		fwhm_inds = np.where(fwhm_x > 2.5)[0]
-		pos_inds = np.where((abs(x_deviations) > 2.5) | (abs(y_deviations) > 2.5))[0]
-		airmass_inds = np.where(airmasses > 2)[0] 
-		sky_inds = np.where(median_sky > 5)[0]
-		# humidity_inds = np.where(humidity > 50)[0]
-		same_mask[fwhm_inds] = 1
-		same_mask[pos_inds] = 1
-		same_mask[airmass_inds] = 1
-		same_mask[sky_inds] = 1
-		# same_mask[humidity_inds] = 1
-		# same_mask[flux_inds] = 1
-		mask = same_mask==1
-
-		# times[mask] = np.nan
-		airmasses[mask] = np.nan
-		exposure_times[mask] = np.nan
-		filenames[mask] = np.nan
-		ha[mask] = np.nan
-		humidity[mask] = np.nan
-		fwhm_x[mask] = np.nan 
-		fwhm_y[mask] = np.nan 
-		flux[:,mask,:] = np.nan 
-		flux_err[:,mask,:] = np.nan 
-		x[mask,:] = np.nan 
-		y[mask,:] = np.nan 
-		sky[mask,:] = np.nan
+	# if transit ephemerides have been provided, use them to construct a transit mask
+	transit_mask = None
+	if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv'): 
+		ephem_df = pd.read_csv(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv')
+		for i in range(len(ephem_df)):
+			t0 = ephem_df['t0'][i]
+			per = ephem_df['period'][i]
+			dur = ephem_df['duration'][i]
+			start_n = int(np.ceil((times[0]-t0)/per))
+			end_n = int(np.floor(times[-1]-t0)/per)
+			tn = t0 + per*np.arange(start_n, end_n+2)
+			transit_mask = np.ones_like(times, dtype='bool')
+			for j in range(len(tn)):
+				transit_mask[np.where((times > tn[j]-dur/2) & (times < tn[j] + dur/2))[0]] = False
 
 	# determine if nights should be dropped based on minimum time duration criterion 
 	dates_to_remove = []
@@ -629,7 +619,7 @@ def main(raw_args=None):
 		night_inds_list.append(night_inds)
 		tot_exposure_time = np.nansum(exposure_times[night_inds])/3600
 		if tot_exposure_time <= minimum_night_duration:
-			same_mask[night_inds] = 1
+			# same_mask[night_inds] = 1
 
 			print(f'{dates[i]} dropped! Less than {minimum_night_duration} hours of exposures.')
 			dates_to_remove.append(i)
@@ -639,7 +629,7 @@ def main(raw_args=None):
 		times_list = np.delete(times_list, dates_to_remove)
 		night_inds_list = np.delete(night_inds_list, dates_to_remove)
 	
-	mask = (same_mask == 1) | (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask == 1) | (flux_mask == 1)
+	mask = (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask == 1) | (flux_mask == 1)
 
 	# 
 	# airmasses[mask] = np.nan
@@ -657,7 +647,7 @@ def main(raw_args=None):
 	
 	print(f'Quality restrictions cut to {len(x_deviations)-sum(mask)} exposures out of {len(x_deviations)} total exposures. Data are on {len(dates)} nights.')
 	
-	# # finally, remove sources that have non-linear flags = 1 for more than 10% of their non-nan frames 	
+	# # finally, remove sources that have n`on-linear flags = 1 for more than 10% of their non-nan frames 	
 	# # NOTE this is not memory efficient...
 	# non_linear_sums = np.sum(non_linear_flags[0][mask==0,:],axis=0)
 	# non_linear_cut = int(sum(mask==0)*0.1)
@@ -758,7 +748,7 @@ def main(raw_args=None):
 			flux_arr = binned_flux[i][:,ref_inds]
 			flux_err_arr = binned_flux_err[i][:,ref_inds]
 			nl_flag_arr = binned_nl_flags[i][:,ref_inds]
-			weights, mask = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
 			weights_arr[:, i] = weights
 	else:
 		# otherwise, read in existing reference star weights
@@ -788,6 +778,7 @@ def main(raw_args=None):
 	# pre compute the scintillation
 	sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exposure_times)**(-1/2)*np.exp(-2306/8000)
 
+	mask_inv = ~mask
 	for tt in range(len(common_source_ids)):
 		tloop = time.time()
 		if common_source_ids[tt] == tierras_target_id:
@@ -802,10 +793,11 @@ def main(raw_args=None):
 		print(f'Doing {target}, source {tt+1} of {len(common_source_ids)}.')
 
 		med_stddevs = np.zeros(n_dfs)
+		med_stddevs_2 = np.zeros(n_dfs)
 		best_med_stddev = 9999999.
 		# mearth_style_times = np.zeros(n_dfs)
 		best_corr_flux = None
-
+		flux_corr_save = np.zeros((n_dfs, len(times)))
 		# CAN WE REPLACE THIS LOOP WITH MATRIX MULTIPLICATION?
 		for i in range(n_dfs):			
 			# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
@@ -826,9 +818,9 @@ def main(raw_args=None):
 
 			# mearth_style_times[i] = time.time()-tmearth
 				
-			mask = np.zeros(len(flux[i][:,tt]), dtype='int') 
-			mask[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
-			if sum(mask) == len(mask):
+			mask_ = np.zeros(len(flux[i][:,tt]), dtype='int') 
+			mask_[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
+			if sum(mask_) == len(mask_):
 				print(f'All exposures saturated for {target_gaia_id}, skipping!')
 				break
 
@@ -839,8 +831,8 @@ def main(raw_args=None):
 			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
 			target_flux = copy.deepcopy(flux[i][:,tt])
 			target_flux_err = copy.deepcopy(flux_err[i][:,tt])
-			target_flux[mask] = np.nan
-			target_flux_err[mask] = np.nan
+			target_flux[mask_] = np.nan
+			target_flux_err[mask_] = np.nan
 			corr_flux = target_flux / alc
 			rel_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
 			
@@ -868,13 +860,24 @@ def main(raw_args=None):
 
 			# evaluate sigma_n2n (stddev of nightly medians)
 			medians = np.zeros(len(bin_inds))
-			for k in range(len(bin_inds)):
-				medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]])
-			med_stddevs[i] = np.nanstd(medians)
+	
+			# if a transit mask has been created, exclude those exposures from the stddev calculation 
+			if target == field and transit_mask is not None:
+				# for k in range(len(bin_inds)):
+				# 	medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]][mask_inv[bin_inds[k] & transit_mask[bin_inds[k]]]])
 
+				med_stddevs_2[i] = np.nanstd(corr_flux_sc[mask_inv & transit_mask])
+			else:
+				# for k in range(len(bin_inds)):
+				# 	medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]][mask_inv[bin_inds[k]]])
+				med_stddevs_2[i] = np.nanstd(corr_flux_sc[mask_inv])
+			
+			# med_stddevs[i] = np.nanstd(medians)
+
+			flux_corr_save[i] = corr_flux
 			# if this light curve is better than the previous ones, store it for later
-			if med_stddevs[i] < best_med_stddev: 
-				best_med_stddev = med_stddevs[i]
+			if med_stddevs_2[i] < best_med_stddev:
+				best_med_stddev = med_stddevs_2[i]
 				best_phot_file = i 
 				best_corr_flux = corr_flux
 				best_corr_flux_err = corr_flux_err
@@ -885,7 +888,9 @@ def main(raw_args=None):
 
 		# if best_corr_flux is None: 
 		# 	breakpoint()
-				
+		# if common_source_ids[tt] == tierras_target_id:
+		# 	breakpoint()
+
 		if best_corr_flux is not None:
 			# write out the best light curve 
 			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask, 'Saturated Flag':saturated_flags[best_phot_file,:,tt].astype(int), 'Non-Linear Flag':non_linear_flags[best_phot_file,:,tt].astype(int)}
