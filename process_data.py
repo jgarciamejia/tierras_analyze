@@ -37,7 +37,7 @@ ffname = 'flat0000'
 phot_type = 'fixed'
 
 # read in priority target list 
-with open('analysis_priority_fields.txt', 'r') as f:
+with open('/home/ptamburo/tierras/tierras_analyze/analysis_priority_fields.txt', 'r') as f:
     priority_targets = f.readlines()
 priority_targets = [i.strip() for i in priority_targets][::-1]
 
@@ -125,7 +125,7 @@ for j in range(len(target_list)):
     # if target == 'TIC33743172':
     #  continue
     print(f'Making global light curves for {target} (field {j+1} of {len(target_list)})')
-    args = f'-field {target} -SAME False -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
+    args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
     print(args)
     analyze_global_main(args.split())
 
