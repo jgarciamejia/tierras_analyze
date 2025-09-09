@@ -11,6 +11,11 @@ from ap_phot import t_or_f
 from scipy.signal import find_peaks
 import os 
 import matplotlib
+from scipy.signal import argrelextrema
+from scipy.optimize import curve_fit 
+
+def linear_model(x, m, b):
+    return m*x+b
 
 def sine_model(x, a, c):
     return a*np.sin(2*np.pi*x+c)+1
@@ -280,6 +285,7 @@ def main(raw_args=None):
     ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flat directory to use for reading light curves.')
     ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
     ap.add_argument('-quality_mask', required=False, default='True', type=str)
+    ap.add_argument('-flux_flag_level', required=False, default=0.8, type=float, help="Should be between 0 and 1. If passed, apply custom masking on flux levels using normalized ALC. Points below flux_flag_level will be ignored.")
     ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
     ap.add_argument('-autofreq', required=False, default='True', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
     ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')
@@ -292,6 +298,7 @@ def main(raw_args=None):
     ffname = args.ffname 
     median_filter_w = args.median_filter_w
     quality_mask = t_or_f(args.quality_mask)
+    flux_flag_level = args.flux_flag_level
     sc = t_or_f(args.sigmaclip)
     autofreq = t_or_f(args.autofreq)
     global per_lower, per_upper 
@@ -316,12 +323,13 @@ def main(raw_args=None):
     x = np.array(df['BJD TDB'])
     y = np.array(df['Flux'])
     y_err = np.array(df['Flux Error'])
+    alc = np.array(df['ALC'])
     # flux_flag = np.array(df['Low Flux Flag']).astype(bool)
     wcs_flag = np.array(df['WCS Flag']).astype(bool)
     pos_flag = np.array(df['Position Flag']).astype(bool)
     fwhm_flag = np.array(df['FWHM Flag']).astype(bool)
     flux_flag = np.array(df['Flux Flag']).astype(bool)
-    
+
     # check for file indicating start/end times of transits; if it exists, use it to mask out in-transit points   
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv') and target == field:
         transit_time_df = pd.read_csv(f'/data/tierras/fields/{field}/{field}_transit_times.csv')
@@ -338,6 +346,7 @@ def main(raw_args=None):
         pos_flag = pos_flag[transit_inds]
         fwhm_flag = fwhm_flag[transit_inds]
         flux_flag = flux_flag[transit_inds]
+        alc = alc[transit_inds]
 
     # alternatively, the user can declare a list of linear ephemerides for planets in the system; if this file exists, use it to mask in-transit points 
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv') and target == field:
@@ -360,15 +369,101 @@ def main(raw_args=None):
             pos_flag = pos_flag[transit_inds]
             fwhm_flag = fwhm_flag[transit_inds]
             flux_flag = flux_flag[transit_inds]
+            alc = alc[transit_inds]
+    
+    
+         
+
+    # fit the alc to correct for flux loss due to mirror getting dirtier 
+    # do it for each camera restart season 
+    mirror_df = pd.read_csv('/data/tierras/fields/mirror_cleaning_dates.csv', comment='#')
+    global mirror_dates
+    mirror_dates = np.array(mirror_df['jd'])
+    mirror_fit = np.zeros(len(x))
+
+    fig, ax = plt.subplots(2, figsize=(8,6), sharex=True)
+    ax[0].plot(x, alc/np.median(alc), label='Normalized ALC')
+    ax[0].tick_params(labelsize=12)
+    ax[0].grid(alpha=0.5)
+    ax[0].set_ylabel('Norm. ALC flux', fontsize=14)
+
+    for i in range(len(mirror_dates)):
+        labeled = False
+        if mirror_dates[i] > x[0]:
+            if not labeled:
+                ax[0].axvline(mirror_dates[i], color='k', ls='--', label='Mirror cleaning dates')
+                labeled = True
+            else:
+                ax[0].axvline(mirror_dates[i], color='k', ls='--')
+
+    labeled = False
+    for i in range(len(mirror_dates)+1):
+        if i == 0:
+            x_start = 0 
+        else:
+            x_start = mirror_dates[i-1]
+        if i == len(mirror_dates):
+            x_end = x[-1]
+        else:
+            x_end = mirror_dates[i]
+        inds = np.where((x >= x_start) & (x <= x_end))[0]
+        if len(inds) == 0:
+            continue 
+        
+        order = max([int(len(inds)/100), 10])
+        maxima_indices = inds[argrelextrema(alc[inds]/np.median(alc[inds]), np.greater, order=order)[0]]
+
+        # coeffs = np.polyfit(x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), 1)
+
+        coeffs, pcov = curve_fit(linear_model, x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), bounds=([-np.inf, -np.inf], [0, np.inf]))
+
+        
+        fit = coeffs[0]*(x[inds] - x[maxima_indices[0]]) +coeffs[1]
+       
+
+        if not labeled:
+            ax[0].plot(x[maxima_indices], alc[maxima_indices]/np.median(alc), 'rx', label='Fit points')
+        else:
+            ax[0].plot(x[maxima_indices], alc[maxima_indices]/np.median(alc), 'rx')
+        
+
+        mirror_fit[inds] = fit 
+    
+        if not labeled:
+            ax[0].plot(x[inds], fit, color='tab:orange', label='Mirror dirtying fit')
+            labeled = True
+        else:
+            ax[0].plot(x[inds], fit, color='tab:orange')
+    
+    ax[0].legend()
+
+    mirror_corrected_flux = (alc/np.median(alc))/mirror_fit
+
+    ax[1].plot(x, mirror_corrected_flux, label='Dirtying-corrected ALC flux')
+    ax[1].axhline(flux_flag_level, color='tab:red', ls='--', label='Flux flag level')
+    ax[1].legend()
+    ax[1].set_xlabel('Time (BJD)', fontsize=14)
+    ax[1].grid(alpha=0.5)
+    ax[1].set_ylabel('Corrected Flux', fontsize=14)
+    ax[1].tick_params(labelsize=12)
+    fig.tight_layout()
+
+    # now mask out low flux nights 
+    # breakpoint()
+
 
     if quality_mask: 
+        flux_flag = np.zeros_like(wcs_flag)
+        inds = np.where(mirror_corrected_flux < flux_flag_level)
+        flux_flag[inds] = True
+
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag))[0]
 
         x = x[mask]
         y = y[mask]
         y_err = y_err[mask]
 
-    nan_inds = ~np.isnan(y)
+    nan_inds = ~np.isnan(y) & ~np.isnan(y_err)
     x = x[nan_inds]
     y = y[nan_inds]
     y_err = y_err[nan_inds]
@@ -377,7 +472,7 @@ def main(raw_args=None):
     norm = np.nanmedian(y)
     y /= norm 
     y_err /= norm 
-    
+
     if baseline_restarts:
         baseline_df = pd.read_csv('/data/tierras/fields/camera_restart_dates.csv', comment='#')
         global baseline_dates
@@ -394,8 +489,9 @@ def main(raw_args=None):
             inds = np.where((x >= x_start) & (x <= x_end))[0]
             norm = np.nanmedian(y[inds])
             y[inds] /= norm 
-            y_err[inds] /= norm 
- 
+            y_err[inds] /= norm
+    
+    
     if median_filter_w != 0:
         print(f'Median filtering target flux with a filter width of {median_filter_w} days.')
         x_filter, y_filter = median_filter_uneven(x, y, median_filter_w)
