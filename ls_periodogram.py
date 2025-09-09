@@ -411,12 +411,17 @@ def main(raw_args=None):
         if len(inds) == 0:
             continue 
         
-        order = max([int(len(inds)/100), 10])
+        order = max([int(len(inds)/100), 1])
         maxima_indices = inds[argrelextrema(alc[inds]/np.median(alc[inds]), np.greater, order=order)[0]]
 
         # coeffs = np.polyfit(x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), 1)
 
-        coeffs, pcov = curve_fit(linear_model, x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), bounds=([-np.inf, -np.inf], [0, np.inf]))
+        try:
+            coeffs, pcov = curve_fit(linear_model, x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), bounds=([-np.inf, -np.inf], [0, np.inf]))
+        except:
+            # if the fit fails (usually due to there not being much data on a target following a mirror cleaning) don't do any fitting and just continue.
+            mirror_fit[inds] = np.ones(len(inds))
+            continue
 
         
         fit = coeffs[0]*(x[inds] - x[maxima_indices[0]]) +coeffs[1]
