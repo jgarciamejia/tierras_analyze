@@ -244,7 +244,7 @@ def main(raw_args=None):
 		source_ids.append(list(source_dfs[i]['source_id']))
 		source_gaia_rp.append(list(source_dfs[i]['phot_rp_mean_mag']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
-	
+
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
@@ -518,10 +518,9 @@ def main(raw_args=None):
 
 		start = stop
 	print(f'Read-in: {time.time()-t1}')
-
 	# write out a global ancillary .csv 
 	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
-	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])
+	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])	
 	global_ancillary_data.to_csv(global_ancillary_path, index=0)
 
 	# identify and interpolate outliers in normalized flux 
