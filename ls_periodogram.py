@@ -79,7 +79,7 @@ def periodogram(x, y, y_err, pers=None, sc=False):
 
     return x, y, y_err, pers, freqs, power, x_offset
 
-def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baseline_restarts=False, color_by_time=False):
+def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target, baseline_restarts=False, color_by_time=False):
     def on_click(event):
         ''' allow the user to click on different periodogram peaks and phase on them '''
 
@@ -189,6 +189,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baselin
     else:
         color='#b0b0b0'
 
+    ax1.set_title(target, fontsize=14)
     ax1.scatter(x, y, c=color, s=2)
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',ecolor=color,zorder=0)
     if baseline_restarts:
@@ -507,7 +508,7 @@ def main(raw_args=None):
 
     # calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(x, np.ones_like(x), fit_mean=False, center_data=False).power(freq)
-    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, baseline_restarts, color_by_time=True)
+    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target, baseline_restarts, color_by_time=True)
 
     return fig, ax, power
 
