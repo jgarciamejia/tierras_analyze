@@ -67,7 +67,7 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         # y = y[use_inds]
         # y_err = y_err[use_inds] 
 
-    x_offset = x[0]
+    
     x -= x_offset
 
     if pers is None:
@@ -322,6 +322,9 @@ def main(raw_args=None):
     except:
         return None, None, None
     x = np.array(df['BJD TDB'])
+    global x_offset 
+    x_offset = x[0]
+
     y = np.array(df['Flux'])
     y_err = np.array(df['Flux Error'])
     alc = np.array(df['ALC'])
@@ -330,6 +333,13 @@ def main(raw_args=None):
     pos_flag = np.array(df['Position Flag']).astype(bool)
     fwhm_flag = np.array(df['FWHM Flag']).astype(bool)
     flux_flag = np.array(df['Flux Flag']).astype(bool)
+    if target == field:
+        saturated_flag = np.array(df['Saturated Flag']).astype(bool)
+        nonlinear_flag = np.array(df['Non-Linear Flag']).astype(bool)
+    else:
+        # since the nonlinear/saturated flags are only evaluated for the target, if running on another star in the field, just do not apply!
+        saturated_flag = np.zeros(len(df)).astype(bool)
+        nonlinear_flag = np.zeros(len(df)).astype(bool)
 
     # check for file indicating start/end times of transits; if it exists, use it to mask out in-transit points   
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv') and target == field:
@@ -348,6 +358,8 @@ def main(raw_args=None):
         fwhm_flag = fwhm_flag[transit_inds]
         flux_flag = flux_flag[transit_inds]
         alc = alc[transit_inds]
+        nonlinear_flag = nonlinear_flag[transit_inds]
+        saturated_flag = saturated_flag[transit_inds]
 
     # alternatively, the user can declare a list of linear ephemerides for planets in the system; if this file exists, use it to mask in-transit points 
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv') and target == field:
@@ -371,6 +383,8 @@ def main(raw_args=None):
             fwhm_flag = fwhm_flag[transit_inds]
             flux_flag = flux_flag[transit_inds]
             alc = alc[transit_inds]
+            saturated_flag = saturated_flag[transit_inds]
+            nonlinear_flag = nonlinear_flag[transit_inds]
     
     
          
@@ -383,7 +397,7 @@ def main(raw_args=None):
     mirror_fit = np.zeros(len(x))
 
     fig, ax = plt.subplots(2, figsize=(8,6), sharex=True)
-    ax[0].plot(x, alc/np.median(alc), label='Normalized ALC')
+    ax[0].plot(x-x_offset, alc/np.median(alc), label='Normalized ALC')
     ax[0].tick_params(labelsize=12)
     ax[0].grid(alpha=0.5)
     ax[0].set_ylabel('Norm. ALC flux', fontsize=14)
@@ -392,10 +406,10 @@ def main(raw_args=None):
         labeled = False
         if mirror_dates[i] > x[0]:
             if not labeled:
-                ax[0].axvline(mirror_dates[i], color='k', ls='--', label='Mirror cleaning dates')
+                ax[0].axvline(mirror_dates[i]-x_offset, color='k', ls='--', label='Mirror cleaning dates')
                 labeled = True
             else:
-                ax[0].axvline(mirror_dates[i], color='k', ls='--')
+                ax[0].axvline(mirror_dates[i]-x_offset, color='k', ls='--')
 
     labeled = False
     for i in range(len(mirror_dates)+1):
@@ -428,27 +442,27 @@ def main(raw_args=None):
        
 
         if not labeled:
-            ax[0].plot(x[maxima_indices], alc[maxima_indices]/np.median(alc), 'rx', label='Fit points')
+            ax[0].plot(x[maxima_indices]-x_offset, alc[maxima_indices]/np.median(alc), 'rx', label='Fit points')
         else:
-            ax[0].plot(x[maxima_indices], alc[maxima_indices]/np.median(alc), 'rx')
+            ax[0].plot(x[maxima_indices]-x_offset, alc[maxima_indices]/np.median(alc), 'rx')
         
 
         mirror_fit[inds] = fit 
     
         if not labeled:
-            ax[0].plot(x[inds], fit, color='tab:orange', label='Mirror dirtying fit')
+            ax[0].plot(x[inds]-x_offset, fit, color='tab:orange', label='Mirror dirtying fit')
             labeled = True
         else:
-            ax[0].plot(x[inds], fit, color='tab:orange')
+            ax[0].plot(x[inds]-x_offset, fit, color='tab:orange')
     
     ax[0].legend()
 
     mirror_corrected_flux = (alc/np.median(alc))/mirror_fit
 
-    ax[1].plot(x, mirror_corrected_flux, label='Dirtying-corrected ALC flux')
+    ax[1].plot(x-x_offset, mirror_corrected_flux, label='Dirtying-corrected ALC flux')
     ax[1].axhline(flux_flag_level, color='tab:red', ls='--', label='Flux flag level')
     ax[1].legend()
-    ax[1].set_xlabel('Time (BJD)', fontsize=14)
+    ax[1].set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax[1].grid(alpha=0.5)
     ax[1].set_ylabel('Corrected Flux', fontsize=14)
     ax[1].tick_params(labelsize=12)
@@ -463,8 +477,7 @@ def main(raw_args=None):
         inds = np.where(mirror_corrected_flux < flux_flag_level)
         flux_flag[inds] = True
 
-        mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag))[0]
-
+        mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag | nonlinear_flag | saturated_flag))[0]
         x = x[mask]
         y = y[mask]
         y_err = y_err[mask]
