@@ -19,6 +19,7 @@ ap.add_argument("-start_field", required=False, default='', help="If you pass a 
 ap.add_argument("-skip_photometry", required=False, default='False', help="If True, skip photometry step (for testing)")
 ap.add_argument("-force_reweight", required=False, default='False', help="If True, force the reweighting of the reference stars for every field in the target list.")
 ap.add_argument('-date', required=False, default=None, help='Date of data to process. If not passed, will default to last night.' )
+ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flattened directory.')
 
 args = ap.parse_args()
 single_field = args.single_field
@@ -26,6 +27,7 @@ start_field = args.start_field
 skip_photometry = t_or_f(args.skip_photometry)
 force_reweight = t_or_f(args.force_reweight)
 date = args.date 
+ffname = args.ffname
 
 # if no date was passed, grab last night's date
 if date is None:
@@ -33,7 +35,6 @@ if date is None:
     date = str(last_night.year)+str(last_night.month).zfill(2)+str(last_night.day).zfill(2)
 
 # specify the date list
-ffname = 'flat0000'
 phot_type = 'fixed'
 
 # read in priority target list 
