@@ -21,11 +21,14 @@ def sine_model(x, a, c):
     return a*np.sin(2*np.pi*x+c)+1
 
 def periodogram(x, y, y_err, pers=None, sc=False):
+    global sky
+    
     # remove NaNs
     use_inds = ~np.isnan(y)
     x = x[use_inds]
     y = y[use_inds]
     y_err = y_err[use_inds]
+    sky = sky[use_inds]
 
     if sc:
         # get times of each night 
@@ -60,15 +63,30 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         x = x[use_inds]
         y = y[use_inds]
         y_err = y_err[use_inds]
+        sky = sky[use_inds]
 
-        # v, l, h = sigmaclip(y_err[~np.isnan(y_err)])
-        # use_inds = np.where(y_err<h)[0]
-        # x = x[use_inds]
-        # y = y[use_inds]
-        # y_err = y_err[use_inds] 
+    # get the data binned over each night 
+    x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
+    x_breaks = np.where(x_deltas > 0.4)[0]
+    bx = np.zeros(len(x_breaks) + 1)
+    by = np.zeros_like(bx)
+    bye = np.zeros_like(bx)
 
+    for i in range(len(x_breaks) + 1):
+        if i == 0:
+            inds = np.arange(0,x_breaks[i]+1)
+        elif i < len(x_breaks):
+            inds = np.arange(x_breaks[i-1]+1, x_breaks[i]+1)
+        else:
+            inds = np.arange(x_breaks[-1]+1, len(x))
+        
+        bx[i] = np.mean(x[inds])
+        by[i] = np.median(y[inds])
+        bye[i] = np.median(y_err[inds]) / np.sqrt(len(inds))
+    
     
     x -= x_offset
+    bx -= x_offset
 
     if pers is None:
         freqs, power = LombScargle(x, y, y_err).autopower(maximum_frequency=1/per_lower)
@@ -77,9 +95,9 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         freqs = 1/pers
         power = LombScargle(x, y, y_err).power(freqs)
 
-    return x, y, y_err, pers, freqs, power, x_offset
+    return x, y, y_err, bx, by, bye, pers, freqs, power, x_offset
 
-def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target, baseline_restarts=False, color_by_time=False):
+def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_offset, target, baseline_restarts=False, color_by_time=False):
     def on_click(event):
         ''' allow the user to click on different periodogram peaks and phase on them '''
 
@@ -166,7 +184,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target,
 
         return 
 
-    fig = plt.figure(figsize=(15,10))
+    fig = plt.figure(figsize=(9,10))
     ax1 = plt.subplot(311)
     ax2 = plt.subplot(312)
     #ax3 = plt.subplot(413, sharex=ax2)
@@ -192,6 +210,7 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target,
     ax1.set_title(target, fontsize=14)
     ax1.scatter(x, y, c=color, s=2)
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',ecolor=color,zorder=0)
+    ax1.errorbar(bx, by, bye, marker='o', ls='', mfc='none', mew=1.5, zorder=3)
     if baseline_restarts:
         for i in range(len(baseline_dates)):
             if x[0] < baseline_dates[i]-x_offset < x[-1]: # only plot if it falls within the time range of observations 
@@ -274,8 +293,6 @@ def periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target,
 
     plt.tight_layout()
 
-
-    breakpoint()
     return fig, (ax1, ax2, ax4)
 
 def main(raw_args=None):
@@ -328,6 +345,8 @@ def main(raw_args=None):
     y = np.array(df['Flux'])
     y_err = np.array(df['Flux Error'])
     alc = np.array(df['ALC'])
+    global sky
+    sky = np.array(df['Sky Background (ADU/s)'])
     # flux_flag = np.array(df['Low Flux Flag']).astype(bool)
     wcs_flag = np.array(df['WCS Flag']).astype(bool)
     pos_flag = np.array(df['Position Flag']).astype(bool)
@@ -353,6 +372,7 @@ def main(raw_args=None):
         x = x[transit_inds]
         y = y[transit_inds]
         y_err = y_err[transit_inds]
+        sky = sky[transit_inds]
         wcs_flag = wcs_flag[transit_inds]
         pos_flag = pos_flag[transit_inds]
         fwhm_flag = fwhm_flag[transit_inds]
@@ -378,6 +398,7 @@ def main(raw_args=None):
             x = x[transit_inds]
             y = y[transit_inds]
             y_err = y_err[transit_inds]
+            sky = sky[transit_inds]
             wcs_flag = wcs_flag[transit_inds]
             pos_flag = pos_flag[transit_inds]
             fwhm_flag = fwhm_flag[transit_inds]
@@ -385,9 +406,6 @@ def main(raw_args=None):
             alc = alc[transit_inds]
             saturated_flag = saturated_flag[transit_inds]
             nonlinear_flag = nonlinear_flag[transit_inds]
-    
-    
-         
 
     # fit the alc to correct for flux loss due to mirror getting dirtier 
     # do it for each camera restart season 
@@ -481,11 +499,13 @@ def main(raw_args=None):
         x = x[mask]
         y = y[mask]
         y_err = y_err[mask]
+        sky = sky[mask]
 
     nan_inds = ~np.isnan(y) & ~np.isnan(y_err)
     x = x[nan_inds]
     y = y[nan_inds]
     y_err = y_err[nan_inds]
+    sky = sky[nan_inds]
     
     # renormalize with masks applied 
     norm = np.nanmedian(y)
@@ -522,12 +542,13 @@ def main(raw_args=None):
         # plt.plot(x,mu*y/y_filter)
         y =  mu*y/(y_filter)
 
-    x, y, y_err, per, freq, power, x_offset = periodogram(x, y, y_err, pers=pers, sc=sc)
+    x, y, y_err, bx, by, bye, per, freq, power, x_offset = periodogram(x, y, y_err, pers=pers, sc=sc)
 
     # calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(x, np.ones_like(x), fit_mean=False, center_data=False).power(freq)
-    fig, ax = periodogram_plot(x, y, y_err, per, power, window_fn_power, x_offset, target, baseline_restarts, color_by_time=True)
+    fig, ax = periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_offset, target, baseline_restarts, color_by_time=True)
 
+    breakpoint()
     return fig, ax, power
 
 
