@@ -739,6 +739,10 @@ def main(raw_args=None):
 	elif len(dates) >= 30:
 		if len(dates) % 10 == 0:
 			reweight = True	
+
+	# breakpoint()
+	# reweight = False
+			
 	if reweight or force_reweight: # force_reweight is an argument passed by the user to make allow the reweighting to happen even if the reweight criteria above are not met
 		print(f'Weighting {len(ref_inds)} reference stars...')
 		weights_arr = np.zeros((len(ref_inds), n_dfs))
@@ -757,7 +761,6 @@ def main(raw_args=None):
 		for key in weights_df.keys()[1:]:
 			weights_arr[:,i] = weights_df[key]	
 			i += 1
-
 
 	if reweight or force_reweight:
 		# save a csv with the weights to the light curve directory 
@@ -890,29 +893,41 @@ def main(raw_args=None):
 		# if common_source_ids[tt] == tierras_target_id:
 		# 	breakpoint()
 
-		if best_corr_flux is not None:
-			# write out the best light curve 
-			output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask, 'Saturated Flag':saturated_flags[best_phot_file,:,tt].astype(int), 'Non-Linear Flag':non_linear_flags[best_phot_file,:,tt].astype(int)}
-			
-			if ap_rad is not None:
-				best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
-			else:
-				best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
+		# if best_corr_flux is not None:
 
-			if os.path.exists(output_path/f'{target}_global_lc.csv'):
-				os.remove(output_path/f'{target}_global_lc.csv')
+		if best_corr_flux is None: 
+			best_med_stddev = np.nan 
+			best_phot_file = 0 # doesn't matter what this is set to
+			best_corr_flux = np.zeros(len(times)) + np.nan 
+			best_corr_flux_err = np.zeros_like(best_corr_flux) + np.nan 
+			best_raw_flux = np.zeros_like(best_corr_flux) + np.nan 
+			best_raw_flux_err = np.zeros_like(best_corr_flux) + np.nan 
+			best_alc = np.zeros_like(best_corr_flux) + np.nan 
+			best_alc_err = np.zeros_like(best_corr_flux) + np.nan 
 			
-			filename = open(output_path/f'{target}_global_lc.csv', 'a')
-			filename.write(f'# this light curve was made using {best_phot_style}\n' )
-			output_df = pd.DataFrame(output_dict)
-			output_df.to_csv(filename, index=0, na_rep=np.nan)
-			filename.close()
-			set_tierras_permissions(output_path/f'{target}_global_lc.csv')
 
-			gc.collect() # do garbage collection to prevent memory leaks 
-			print(f'tloop: {time.time()-tloop:.1f}')
-			# avg_mearth_times[tt] = np.mean(mearth_style_times)
-			# print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
+		# write out the best light curve 
+		output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask, 'Saturated Flag':saturated_flags[best_phot_file,:,tt].astype(int), 'Non-Linear Flag':non_linear_flags[best_phot_file,:,tt].astype(int)}
+		
+		if ap_rad is not None:
+			best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
+		else:
+			best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
+
+		if os.path.exists(output_path/f'{target}_global_lc.csv'):
+			os.remove(output_path/f'{target}_global_lc.csv')
+		
+		filename = open(output_path/f'{target}_global_lc.csv', 'a')
+		filename.write(f'# this light curve was made using {best_phot_style}\n' )
+		output_df = pd.DataFrame(output_dict)
+		output_df.to_csv(filename, index=0, na_rep=np.nan)
+		filename.close()
+		set_tierras_permissions(output_path/f'{target}_global_lc.csv')
+
+		gc.collect() # do garbage collection to prevent memory leaks 
+		print(f'tloop: {time.time()-tloop:.1f}')
+		# avg_mearth_times[tt] = np.mean(mearth_style_times)
+		# print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
 		
 if __name__ == '__main__':
 	main()
