@@ -185,18 +185,17 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
         return 
 
     fig = plt.figure(figsize=(9,10))
-    ax1 = plt.subplot(311)
-    ax2 = plt.subplot(312)
-    #ax3 = plt.subplot(413, sharex=ax2)
-    ax4 = plt.subplot(313)
+    ax1 = plt.subplot(411)
+    ax2 = plt.subplot(412)
+    ax3 = plt.subplot(413, sharex=ax2)
+    ax4 = plt.subplot(414)
 
     global highlight
     cid = fig.canvas.mpl_connect('button_press_event', on_click)
-    axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax4: 'ax4'}
-    # axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
+    axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
     ax1.tick_params(labelsize=12)
     ax2.tick_params(labelsize=12)
-    # ax3.tick_params(labelsize=12)
+    ax3.tick_params(labelsize=12)
     ax4.tick_params(labelsize=12)
 
     if color_by_time: 
@@ -219,7 +218,6 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
     
-    ax2.plot(per, window_fn_power, marker='.', color='tab:orange', label='Window fn.')
     ax2.plot(per, power, marker='.', color='tab:blue', label='Data')
     ax2.set_xscale('log')
 
@@ -238,11 +236,11 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax2.grid(alpha=0.7)
 
     # best_per = 2.48978
-    # ax3.plot(per, window_fn_power, marker='.')
-    # ax3.set_xscale('log')
-    # ax3.set_ylabel('Window fn. power', fontsize=14)
-    # ax3.set_xlabel('Period (d)', fontsize=14)
-    # ax3.grid(alpha=0.7)
+    ax3.plot(per, window_fn_power, marker='.', color='tab:orange')
+    ax3.set_xscale('log')
+    ax3.set_ylabel('Window fn. power', fontsize=14)
+    ax3.set_xlabel('Period (d)', fontsize=14)
+    ax3.grid(alpha=0.7)
 
     phased_x = (x % best_per) / best_per 
     sort = np.argsort(phased_x)
