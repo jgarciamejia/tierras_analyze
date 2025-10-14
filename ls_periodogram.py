@@ -20,8 +20,43 @@ def linear_model(x, m, b):
 def sine_model(x, a, c):
     return a*np.sin(2*np.pi*x+c)+1
 
+def get_binned_data(x, y, y_err, bin_days=1):
+    # get binned data 
+    x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
+    x_breaks = np.where(x_deltas > 0.4)[0]
+    x_list = []
+    for i in range(len(x_breaks)):
+        if i == 0:
+            x_list.append(x[0:x_breaks[i]+1])
+        else:
+            x_list.append(x[x_breaks[i-1]+1:x_breaks[i]+1])
+    x_list.append(x[x_breaks[-1]+1:len(x)])
+    
+    n_bins = int(len(x_list) / bin_days)
+    bx = np.zeros(n_bins)
+    by = np.zeros_like(bx)
+    bye = np.zeros_like(bx)
+
+    for i in range(n_bins):
+        start_ind = i*bin_days
+        end_ind = (i+1)*bin_days
+
+        x_ = []
+        for j in np.arange(start_ind, end_ind):
+            x_.extend(x_list[j])
+
+        x_ = np.array(x_)
+        
+        inds = np.where((x >= x_[0]) & (x <= x_[-1]))[0]
+        bx[i] = np.mean(x[inds])
+        by[i] = np.median(y[inds])
+        bye[i] = np.median(y_err[inds])/np.sqrt(len(inds))
+
+    
+    return bx, by, bye, x_list
+
 def periodogram(x, y, y_err, pers=None, sc=False):
-    global sky
+    global sky, bin_days
     
     # remove NaNs
     use_inds = ~np.isnan(y)
@@ -65,25 +100,26 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         y_err = y_err[use_inds]
         sky = sky[use_inds]
 
-    # get the data binned over each night 
-    x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
-    x_breaks = np.where(x_deltas > 0.4)[0]
-    bx = np.zeros(len(x_breaks) + 1)
-    by = np.zeros_like(bx)
-    bye = np.zeros_like(bx)
+    # # get the data binned over each night 
+    # x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
+    # x_breaks = np.where(x_deltas > 0.4)[0]
+    # bx = np.zeros(len(x_breaks) + 1)
+    # by = np.zeros_like(bx)
+    # bye = np.zeros_like(bx)
 
-    for i in range(len(x_breaks) + 1):
-        if i == 0:
-            inds = np.arange(0,x_breaks[i]+1)
-        elif i < len(x_breaks):
-            inds = np.arange(x_breaks[i-1]+1, x_breaks[i]+1)
-        else:
-            inds = np.arange(x_breaks[-1]+1, len(x))
+    # for i in range(len(x_breaks) + 1):
+    #     if i == 0:
+    #         inds = np.arange(0,x_breaks[i]+1)
+    #     elif i < len(x_breaks):
+    #         inds = np.arange(x_breaks[i-1]+1, x_breaks[i]+1)
+    #     else:
+    #         inds = np.arange(x_breaks[-1]+1, len(x))
         
-        bx[i] = np.mean(x[inds])
-        by[i] = np.median(y[inds])
-        bye[i] = np.median(y_err[inds]) / np.sqrt(len(inds))
+    #     bx[i] = np.mean(x[inds])
+    #     by[i] = np.median(y[inds])
+    #     bye[i] = np.median(y_err[inds]) / np.sqrt(len(inds))
     
+    bx, by, bye, x_list = get_binned_data(x, y, y_err, bin_days=bin_days)
     
     x -= x_offset
     bx -= x_offset
@@ -190,7 +226,7 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax3 = plt.subplot(413, sharex=ax2)
     ax4 = plt.subplot(414)
 
-    global highlight
+    global highlight, bin_days
     cid = fig.canvas.mpl_connect('button_press_event', on_click)
     axes_mapping = {ax1: 'ax1', ax2: 'ax2', ax3: 'ax3', ax4: 'ax4'}
     ax1.tick_params(labelsize=12)
@@ -209,7 +245,7 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax1.set_title(target, fontsize=14)
     ax1.scatter(x, y, c=color, s=2)
     ax1.errorbar(x, y, y_err, linestyle="None",marker='',ecolor=color,zorder=0)
-    ax1.errorbar(bx, by, bye, marker='o', ls='', mfc='none', mew=1.5, zorder=3)
+    ax1.errorbar(bx, by, bye, marker='o', ls='', mfc='none', mew=1.5, zorder=3, label=f'{bin_days}-day bins')
     if baseline_restarts:
         for i in range(len(baseline_dates)):
             if x[0] < baseline_dates[i]-x_offset < x[-1]: # only plot if it falls within the time range of observations 
@@ -217,6 +253,7 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax1.set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
+    ax1.legend()
     
     ax2.plot(per, power, marker='.', color='tab:blue', label='Data')
     ax2.set_xscale('log')
@@ -308,6 +345,7 @@ def main(raw_args=None):
     ap.add_argument('-per_hi', required=False, default=100, type=float, help='Upper period (in days) to use to establish frequency grid IF autofreq is False.')
     ap.add_argument('-per_resolution', required=False, default=15/86400, type=float, help='Period resolution (in days) to use to establish frequency grid IF autofreq is False.')
     ap.add_argument('-baseline_restarts', required=False, default='True', type=str, help='Re-baseline the data using the camera restart dates in /data/tierras/fields/camera_restart_dates.csv')
+    ap.add_argument('-bin_days', required=False, default=1, type=int, help='Number of days to bin over for displaying binned data on the plot (helpful for visualizing faint signals); defaults to 1.')
     args = ap.parse_args(raw_args)
     field = args.field
     gaia_id = args.gaia_id
@@ -317,11 +355,12 @@ def main(raw_args=None):
     flux_flag_level = args.flux_flag_level
     sc = t_or_f(args.sigmaclip)
     autofreq = t_or_f(args.autofreq)
-    global per_lower, per_upper 
+    global per_lower, per_upper, bin_days 
     per_lower = args.per_low
     per_upper = args.per_hi
     per_res = args.per_resolution
     baseline_restarts = t_or_f(args.baseline_restarts)
+    bin_days = args.bin_days
     if gaia_id is None:
         target = field 
     else:
