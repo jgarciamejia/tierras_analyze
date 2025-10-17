@@ -24,6 +24,8 @@ def get_binned_data(x, y, y_err, bin_days=1):
     # get binned data 
     x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
     x_breaks = np.where(x_deltas > 0.4)[0]
+    if len(x_breaks) == 0: # do not do binning if only one night
+        return np.array([]), np.array([]), np.array([]), []
     x_list = []
     for i in range(len(x_breaks)):
         if i == 0:
@@ -69,36 +71,37 @@ def periodogram(x, y, y_err, pers=None, sc=False):
         # get times of each night 
         x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
         x_breaks = np.where(x_deltas > 0.4)[0]
-        x_list = []
-        for i in range(len(x_breaks)):
-            if i == 0:
-                x_list.append(x[0:x_breaks[i]+1])
-            else:
-                x_list.append(x[x_breaks[i-1]+1:x_breaks[i]+1])
-        x_list.append(x[x_breaks[-1]+1:len(x)])
+        if len(x_breaks) != 0: # only carry out the analysis if you have more than one night
+            x_list = []
+            for i in range(len(x_breaks)):
+                if i == 0:
+                    x_list.append(x[0:x_breaks[i]+1])
+                else:
+                    x_list.append(x[x_breaks[i-1]+1:x_breaks[i]+1])
+            x_list.append(x[x_breaks[-1]+1:len(x)])
 
-        x_list_2 = [] 
-        y_list = []
-        y_err_list = []
-        # sigmaclip each night 
-        for i in range(len(x_list)):
-            use_inds = np.where((x>=x_list[i][0])&(x<=x_list[i][-1]))[0]
-            v, l, h = sigmaclip(y[use_inds], 3, 3) # TODO: should median filter y first 
-            sc_inds = np.where((y[use_inds] > l) & (y[use_inds] < h))[0]
-            x_list_2.extend(x[use_inds][sc_inds])
-            y_list.extend(y[use_inds][sc_inds])
-            y_err_list.extend(y_err[use_inds][sc_inds])
-        
-        x = np.array(x_list_2)
-        y = np.array(y_list)
-        y_err = np.array(y_err_list)
+            x_list_2 = [] 
+            y_list = []
+            y_err_list = []
+            # sigmaclip each night 
+            for i in range(len(x_list)):
+                use_inds = np.where((x>=x_list[i][0])&(x<=x_list[i][-1]))[0]
+                v, l, h = sigmaclip(y[use_inds], 3, 3) # TODO: should median filter y first 
+                sc_inds = np.where((y[use_inds] > l) & (y[use_inds] < h))[0]
+                x_list_2.extend(x[use_inds][sc_inds])
+                y_list.extend(y[use_inds][sc_inds])
+                y_err_list.extend(y_err[use_inds][sc_inds])
+            
+            x = np.array(x_list_2)
+            y = np.array(y_list)
+            y_err = np.array(y_err_list)
 
-        v, l, h = sigmaclip(y[~np.isnan(y)])
-        use_inds = np.where((y>l)&(y<h))[0]
-        x = x[use_inds]
-        y = y[use_inds]
-        y_err = y_err[use_inds]
-        sky = sky[use_inds]
+            v, l, h = sigmaclip(y[~np.isnan(y)])
+            use_inds = np.where((y>l)&(y<h))[0]
+            x = x[use_inds]
+            y = y[use_inds]
+            y_err = y_err[use_inds]
+            sky = sky[use_inds]
 
     # # get the data binned over each night 
     # x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])

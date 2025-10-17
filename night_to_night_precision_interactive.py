@@ -38,7 +38,7 @@ def main(raw_args=None):
 			x_click = event.xdata
 			y_click = event.ydata
 			dists = ((rp_mags - x_click)**2+(np.log10(night_to_nights) - np.log10(y_click))**2)**0.5
-			point = np.argmin(dists)
+			point = np.nanargmin(dists)
 			# print(point)
 			# print(x_click)
 			# print(y_click)
@@ -590,7 +590,6 @@ def main(raw_args=None):
 			sc_bx_arr.extend([np.nanmean(night_times)])
 			sc_by_arr.extend([np.nanmedian(night_flux)])
 			sc_bye_arr.extend([measured_noise[j]])
-
 		
 		times_arr.append(np.array(sc_times_arr))
 		flux_arr.append(np.array(sc_flux_arr))
@@ -603,9 +602,12 @@ def main(raw_args=None):
 		global_x_array.append(np.array(df['X']))
 		global_y_array.append(np.array(df['Y']))
 		
-
-		n2n = np.nanstd(night_medians)
-		night_to_nights.append(n2n)
+		if len(night_medians) == 1:
+			n2n = np.nanstd(flux) # handle the special case of just a single night
+			night_to_nights.append(n2n)
+		else:
+			n2n = np.nanstd(night_medians)
+			night_to_nights.append(n2n)
 		night_to_nights_theory_calculated.append(np.nanmedian(night_errs_on_meds))
 		night_to_nights_theory_measured.append(np.nanmedian(measured_noise))
 
