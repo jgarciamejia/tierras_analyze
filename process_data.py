@@ -20,6 +20,7 @@ ap.add_argument("-skip_photometry", required=False, default='False', help="If Tr
 ap.add_argument("-force_reweight", required=False, default='False', help="If True, force the reweighting of the reference stars for every field in the target list.")
 ap.add_argument('-date', required=False, default=None, help='Date of data to process. If not passed, will default to last night.' )
 ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flattened directory.')
+ap.add_argument('-skip_lightcurves', required=False, default='False', help="Whether or not to skip making light curves.")
 
 args = ap.parse_args()
 single_field = args.single_field
@@ -28,6 +29,7 @@ skip_photometry = t_or_f(args.skip_photometry)
 force_reweight = t_or_f(args.force_reweight)
 date = args.date 
 ffname = args.ffname
+skip_lightcurves = t_or_f(args.skip_lightcurves)
 
 # if no date was passed, grab last night's date
 if date is None:
@@ -85,50 +87,46 @@ if not skip_photometry:
         print(args)
         ap_phot_main(args.split())
 
-# part 2: make global light curves
-print('Making light curves...')
-targets = []
-try:
-    targets.extend(sorted(os.listdir(f'/data/tierras/photometry/{date}')))
-except:
-    print(f'No photometry directories found on {date}...')
+if not skip_lightcurves:
+    # part 2: make global light curves
+    print('Making light curves...')
+    targets = []
+    try:
+        targets.extend(sorted(os.listdir(f'/data/tierras/photometry/{date}')))
+    except:
+        print(f'No photometry directories found on {date}...')
 
-# regenerate the target list and do any necessary priority re-sorting
-# not necessarily all the targets will have had photometry done on them so it needs to be regenerated 
-    #e.g. if all the images were way off the desired guiding position
+    # regenerate the target list and do any necessary priority re-sorting
+    # not necessarily all the targets will have had photometry done on them so it needs to be regenerated 
+        #e.g. if all the images were way off the desired guiding position
 
-if single_field == '':
-    target_list = sorted(np.unique(targets))
-    for i in range(len(priority_targets)):
-        shift_ind = np.where([j == priority_targets[i] for j in target_list])[0]
-        if len(shift_ind) == 0: # if the target is in the priority list but was not observed, skip it 
+    if single_field == '':
+        target_list = sorted(np.unique(targets))
+        for i in range(len(priority_targets)):
+            shift_ind = np.where([j == priority_targets[i] for j in target_list])[0]
+            if len(shift_ind) == 0: # if the target is in the priority list but was not observed, skip it 
+                continue
+            target_list.remove(priority_targets[i])
+            target_list.insert(0, priority_targets[i])
+    else:
+        target_list = [single_field]
+
+    print(f'Found {len(target_list)} unique targets across the given date list.')
+
+    if start_field != '':
+        ind = np.where(np.array(target_list) == start_field)[0][0]
+        target_list = target_list[ind:]
+
+    for j in range(len(target_list)):
+        target = target_list[j]
+        if 'TEST' in target or 'TARGET' in target:
             continue
-        target_list.remove(priority_targets[i])
-        target_list.insert(0, priority_targets[i])
-else:
-    target_list = [single_field]
-
-print(f'Found {len(target_list)} unique targets across the given date list.')
-
-# if skip_photometry:
-    # target_list = target_list[targ_cut:]
-    # print(' YOU NEED TO REMOVE THE ABOVE LINE WHEN YOURE DONE TESTING ')
-    # breakpoint() 
-
-if start_field != '':
-    ind = np.where(np.array(target_list) == start_field)[0][0]
-    target_list = target_list[ind:]
-
-for j in range(len(target_list)):
-    target = target_list[j]
-    if 'TEST' in target or 'TARGET' in target:
-        continue
-    # if target == 'TIC33743172':
-    #  continue
-    print(f'Making global light curves for {target} (field {j+1} of {len(target_list)})')
-    args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
-    print(args)
-    analyze_global_main(args.split())
+        # if target == 'TIC33743172':
+        #  continue
+        print(f'Making global light curves for {target} (field {j+1} of {len(target_list)})')
+        args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
+        print(args)
+        analyze_global_main(args.split())
 
 # part 3: update the database
 print('Updating the database...')
