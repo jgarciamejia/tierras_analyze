@@ -13,6 +13,10 @@ import os
 import matplotlib
 from scipy.signal import argrelextrema
 from scipy.optimize import curve_fit 
+from astropy.time import Time
+from datetime import datetime
+import matplotlib.dates as mdates
+import matplotlib.ticker as ticker
 
 def linear_model(x, m, b):
     return m*x+b
@@ -257,6 +261,15 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax1.set_ylabel('Normalized Flux', fontsize=14)
     ax1.grid(alpha=0.7)
     ax1.legend()
+
+    # add calendar dates along top panel
+    ax1_top = ax1.twiny()
+    ax1_top.plot(Time(x+x_offset, format='jd', scale='tdb').datetime, y, marker='', ls='')
+    ax1_top.xaxis.set_major_formatter(mdates.DateFormatter('%b %d %Y'))
+    ax1_top.xaxis.set_major_locator(ticker.MaxNLocator(5))
+    # ax1_top_ticks = ax1.get_xticks().astype(int)
+    # labels = [Time(x[0]+x_offset+i, format='jd', scale='tdb').datetime.strftime('%b %d %Y') for i in ax1_top_ticks]
+    # ax1_top.set_xticklabels(labels)
     
     ax2.plot(per, power, marker='.', color='tab:blue', label='Data')
     ax2.set_xscale('log')
