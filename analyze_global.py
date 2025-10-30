@@ -238,17 +238,23 @@ def main(raw_args=None):
 	source_dfs = []
 	source_ids = []
 	source_gaia_rp = []
+	source_x_pix = []
+	source_y_pix = []
 	for i in range(len(date_list)):
 		source_file = glob(date_list[i]+'/**sources.csv')[0]
 		source_dfs.append(pd.read_csv(source_file))	
 		source_ids.append(list(source_dfs[i]['source_id']))
 		source_gaia_rp.append(list(source_dfs[i]['phot_rp_mean_mag']))
+		source_x_pix.append(list(source_dfs[i]['X pix']))
+		source_y_pix.append(list(source_dfs[i]['Y pix']))
 		print(f'{date_list[i].split("/")[4]}: {len(source_dfs[i])} sources')
 
 	# determine the Gaia ID's of sources that were observed on every night
 	# initialize using the first night
 	common_source_ids = np.array(source_ids[0])
 	common_gaia_rp = np.array(source_gaia_rp[0])
+	common_x_pix = np.array(source_x_pix[0])
+	common_y_pix = np.array(source_y_pix[0])
 
 	# remove sources if they don't have photometry on all other nights
 	inds_to_remove = []
@@ -260,6 +266,8 @@ def main(raw_args=None):
 		inds_to_remove = np.array(inds_to_remove)
 		common_source_ids = np.delete(common_source_ids, inds_to_remove)
 		common_gaia_rp = np.delete(common_gaia_rp, inds_to_remove)
+		common_x_pix = np.delete(common_x_pix, inds_to_remove)
+		common_y_pix = np.delete(common_y_pix, inds_to_remove)
 
 	
 	# get the index mapping between the source dfs and the photometry source names
@@ -305,7 +313,7 @@ def main(raw_args=None):
 	source_output_path = f'/data/tierras/fields/{field}/sources/{field}_common_sources.csv'
 	if os.path.exists(source_output_path): # clear out 
 		os.remove(source_output_path)
-	source_output_dict = {'source_id':common_source_ids, 'phot_rp_mean_mag':common_gaia_rp}
+	source_output_dict = {'source_id':common_source_ids, 'phot_rp_mean_mag':common_gaia_rp, 'x_pix':common_x_pix, 'y_pix':common_y_pix}
 	source_output_df = pd.DataFrame(source_output_dict)
 	source_output_df.to_csv(source_output_path, index=0)
 
