@@ -376,6 +376,7 @@ def main(raw_args=None):
 
     try:
         df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/{target}_global_lc.csv', comment='#')
+        ancillary_df = pd.read_csv(f'/data/tierras/fields/{field}/global_ancillary_data.csv')
     except:
         return None, None, None
     x = np.array(df['BJD TDB'])
@@ -399,6 +400,7 @@ def main(raw_args=None):
         # since the nonlinear/saturated flags are only evaluated for the target, if running on another star in the field, just do not apply!
         saturated_flag = np.zeros(len(df)).astype(bool)
         nonlinear_flag = np.zeros(len(df)).astype(bool)
+    exptime = np.array(ancillary_df['Exposure Time'])
 
     # check for file indicating start/end times of transits; if it exists, use it to mask out in-transit points   
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv') and target == field:
@@ -420,6 +422,7 @@ def main(raw_args=None):
         alc = alc[transit_inds]
         nonlinear_flag = nonlinear_flag[transit_inds]
         saturated_flag = saturated_flag[transit_inds]
+        exptime = exptime[transit_inds]
 
     # alternatively, the user can declare a list of linear ephemerides for planets in the system; if this file exists, use it to mask in-transit points 
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_ephemerides.csv') and target == field:
@@ -446,16 +449,19 @@ def main(raw_args=None):
             alc = alc[transit_inds]
             saturated_flag = saturated_flag[transit_inds]
             nonlinear_flag = nonlinear_flag[transit_inds]
+            exptime = exptime[transit_inds]
 
     # fit the alc to correct for flux loss due to mirror getting dirtier 
     # do it for each camera restart season 
+    
+    alc_norm = (alc / exptime) / np.median(alc / exptime) # account for exposure time in case it changes
     mirror_df = pd.read_csv('/data/tierras/fields/mirror_cleaning_dates.csv', comment='#')
     global mirror_dates
     mirror_dates = np.array(mirror_df['jd'])
     mirror_fit = np.zeros(len(x))
 
     fig, ax = plt.subplots(2, figsize=(8,6), sharex=True)
-    ax[0].plot(x-x_offset, alc/np.median(alc), label='Normalized ALC')
+    ax[0].plot(x-x_offset, alc_norm, label='Normalized ALC')
     ax[0].tick_params(labelsize=12)
     ax[0].grid(alpha=0.5)
     ax[0].set_ylabel('Norm. ALC flux', fontsize=14)
@@ -484,12 +490,12 @@ def main(raw_args=None):
             continue 
         
         order = max([int(len(inds)/100), 1])
-        maxima_indices = inds[argrelextrema(alc[inds]/np.median(alc[inds]), np.greater, order=order)[0]]
+        maxima_indices = inds[argrelextrema(alc_norm[inds]/np.median(alc_norm[inds]), np.greater, order=order)[0]]
 
         # coeffs = np.polyfit(x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), 1)
 
         try:
-            coeffs, pcov = curve_fit(linear_model, x[maxima_indices] - x[maxima_indices[0]], alc[maxima_indices]/np.median(alc), bounds=([-np.inf, -np.inf], [0, np.inf]))
+            coeffs, pcov = curve_fit(linear_model, x[maxima_indices] - x[maxima_indices[0]], alc_norm[maxima_indices]/np.median(alc_norm), bounds=([-np.inf, -np.inf], [0, np.inf]))
         except:
             # if the fit fails (usually due to there not being much data on a target following a mirror cleaning) don't do any fitting and just continue.
             mirror_fit[inds] = np.ones(len(inds))
@@ -500,9 +506,9 @@ def main(raw_args=None):
        
 
         if not labeled:
-            ax[0].plot(x[maxima_indices]-x_offset, alc[maxima_indices]/np.median(alc), 'rx', label='Fit points')
+            ax[0].plot(x[maxima_indices]-x_offset, alc_norm[maxima_indices], 'rx', label='Fit points')
         else:
-            ax[0].plot(x[maxima_indices]-x_offset, alc[maxima_indices]/np.median(alc), 'rx')
+            ax[0].plot(x[maxima_indices]-x_offset, alc_norm[maxima_indices], 'rx')
         
 
         mirror_fit[inds] = fit 
@@ -515,7 +521,7 @@ def main(raw_args=None):
     
     ax[0].legend()
 
-    mirror_corrected_flux = (alc/np.median(alc))/mirror_fit
+    mirror_corrected_flux = (alc_norm)/mirror_fit
 
     ax[1].plot(x-x_offset, mirror_corrected_flux, label='Dirtying-corrected ALC flux')
     ax[1].axhline(flux_flag_level, color='tab:red', ls='--', label='Flux flag level')
@@ -527,8 +533,6 @@ def main(raw_args=None):
     fig.tight_layout()
 
     # now mask out low flux nights 
-    # breakpoint()
-
 
     if quality_mask: 
         flux_flag = np.zeros_like(wcs_flag)
