@@ -129,11 +129,12 @@ if not skip_lightcurves:
         analyze_global_main(args.split())
 
 # part 3: update the database
-print('Updating the database...')
-args = f'-date {date}'
-build_tierras_db_main(args.split())
+if not skip_lightcurves: # only run if light curves have been made
+    print('Updating the database...')
+    args = f'-date {date}'
+    build_tierras_db_main(args.split())
 
-email = "patrick.tamburo@cfa.harvard.edu juliana.garcia-mejia@cfa.harvard.edu"  
-subject = f"[Tierras]: Completed data procesing for {date}"
-command = f'echo | mutt {email} -s "{subject}"'
-subprocess.run(command, shell=True, check=True)
+    email = "patrick.tamburo@cfa.harvard.edu juliana.garcia-mejia@cfa.harvard.edu"  
+    subject = f"[Tierras]: Completed data procesing for {date}"
+    command = f'echo | mutt {email} -s "{subject}"'
+    subprocess.run(command, shell=True, check=True)
