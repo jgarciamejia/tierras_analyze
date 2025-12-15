@@ -274,9 +274,14 @@ def main(raw_args=None):
 	source_inds = []
 	for i in range(len(source_dfs)):
 		source_inds.append([])
-		for j in range(len(common_source_ids)):
-			source_inds[i].extend([np.where(source_dfs[i]['source_id'] == common_source_ids[j])[0][0]])
-	
+		id_to_index = {
+		sid: idx for idx, sid in enumerate(source_dfs[i]['source_id'])}
+
+		source_inds[i].extend([
+			id_to_index[sid]
+			for sid in common_source_ids
+			if sid in id_to_index
+		])	
 	
 	#TODO: what happens when there are different sources on different nights (i.e., if we shifted the field??)
 	# figure out how big the arrays need to be to hold the data
