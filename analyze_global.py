@@ -481,19 +481,23 @@ def main(raw_args=None):
 
 		ancillary_tab = pq.read_table(ancillary_file, columns=ancillary_cols)
 
+		# build use_cols 
+		# only read in the necessary columns from the data files to save a lot of time in very crowded fields
+
+		use_cols = []
+		for s in source_inds[i]:
+			p = f'S{s}'
+			use_cols.extend([
+				f'{p} Source-Sky',
+				f'{p} Source-Sky Err',
+				f'{p} NL Flag',
+				f'{p} Sat Flag',
+				f'{p} Sky',
+				f'{p} X',
+				f'{p} Y',
+		 	])
+
 		for j in range(n_dfs):
-			# only read in the necessary columns from the data files to save a lot of time in very crowded fields
-			use_cols = []
-			for k in range(len(source_inds[i])):
-				use_cols.append(f'S{source_inds[i][k]} Source-Sky')
-				use_cols.append(f'S{source_inds[i][k]} Source-Sky Err')
-				use_cols.append(f'S{source_inds[i][k]} NL Flag')
-				use_cols.append(f'S{source_inds[i][k]} Sat Flag')
-				use_cols.append(f'S{source_inds[i][k]} Sky')
-				use_cols.append(f'S{source_inds[i][k]} X')
-				use_cols.append(f'S{source_inds[i][k]} Y')
-				# use_cols.append(f'S{source_inds[i][k]} X FWHM')
-				# use_cols.append(f'S{source_inds[i][k]} Y FWHM')
 
 			if ap_rad is not None:
 				data_tab = pq.read_table(phot_files[df_ind], columns=use_cols, memory_map=True)
@@ -525,7 +529,9 @@ def main(raw_args=None):
 					sky[start:stop,k] = np.array(data_tab[f'S{source_inds[i][k]} Sky'])
 
 		start = stop
+
 	print(f'Read-in: {time.time()-t1}')
+	breakpoint()
 	# write out a global ancillary .csv 
 	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
 	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])	
