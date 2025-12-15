@@ -531,7 +531,7 @@ def main(raw_args=None):
 		start = stop
 
 	print(f'Read-in: {time.time()-t1}')
-	breakpoint()
+
 	# write out a global ancillary .csv 
 	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
 	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])	
