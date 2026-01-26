@@ -372,7 +372,7 @@ def main(raw_args=None):
 
 	CB_color_cycle = ['#377eb8', '#ff7f00', '#4daf4a','#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
 
-	fig, ax = plt.subplots(1, 2, figsize=(11,6), sharey=True, sharex=True)
+	fig, ax = plt.subplots(1, 2, figsize=(15,6), sharey=True, sharex=True)
 	for a in ax:
 		a.spines['top'].set_linewidth(2)
 		a.spines['right'].set_linewidth(2)
