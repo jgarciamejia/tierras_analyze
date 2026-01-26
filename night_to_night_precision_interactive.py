@@ -38,7 +38,7 @@ def main(raw_args=None):
 			x_click = event.xdata
 			y_click = event.ydata
 			dists = ((rp_mags - x_click)**2+(np.log10(night_to_nights) - np.log10(y_click))**2)**0.5
-			point = np.argmin(dists)
+			point = np.nanargmin(dists)
 			# print(point)
 			# print(x_click)
 			# print(y_click)
@@ -66,7 +66,7 @@ def main(raw_args=None):
 		sc_is_checked = check_all.get_status()[1]
 
 		if mask_is_checked and not sc_is_checked:
-			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int))[0] 
+			all_mask = np.where(np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(global_flux_flags[point]).astype(int))[0] 
 		elif sc_is_checked and not mask_is_checked:
 			nan_inds = ~np.isnan(flux_arr[point])
 			flux_ = flux_arr[point][nan_inds]
@@ -79,7 +79,7 @@ def main(raw_args=None):
 			flux_ = flux_arr[point][nan_inds]
 			v, l, h = sigmaclip(flux_, 4, 4)
 			sc_mask = (flux_arr[point] < l) | (flux_arr[point] > h)
-			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
+			all_mask = np.where(np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
 		else:
 			all_mask = np.arange(len(flux_arr[point]))
 
@@ -259,7 +259,7 @@ def main(raw_args=None):
 
 		# if the box is checked, get the indices of the good exposures using the masks
 		if mask_is_checked and not sc_is_checked:
-			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int))[0] 
+			all_mask = np.where(np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(global_flux_flags[point]).astype(int))[0] 
 		elif sc_is_checked and not mask_is_checked:
 			nan_inds = ~np.isnan(flux_arr[point])
 			flux_ = flux_arr[point][nan_inds]
@@ -272,7 +272,7 @@ def main(raw_args=None):
 			flux_ = flux_arr[point][nan_inds]
 			v, l, h = sigmaclip(flux_, 4, 4)
 			sc_mask = (flux_arr[point] < l) | (flux_arr[point] > h)
-			all_mask = np.where(np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
+			all_mask = np.where(np.logical_not(global_wcs_flags[point]).astype(int) & np.logical_not(global_position_flags[point]).astype(int) & np.logical_not(global_fwhm_flags[point]).astype(int) & np.logical_not(global_flux_flags[point]).astype(int) & np.logical_not(sc_mask).astype(int))[0] 		
 		else:
 			all_mask = np.arange(len(flux_arr[point]))
 
@@ -543,13 +543,13 @@ def main(raw_args=None):
 		night_errs_on_meds = np.zeros(len(times_inds))
 
 		# read in flags as boolean arrays
-		global_flux_flags.append(np.array(df['Low Flux Flag']).astype(bool))
+		global_flux_flags.append(np.array(df['Flux Flag']).astype(bool))
 		global_wcs_flags.append(np.array(df['WCS Flag']).astype(bool))
 		global_position_flags.append(np.array(df['Position Flag']).astype(bool))
 		global_fwhm_flags.append(np.array(df['FWHM Flag']).astype(bool))
 
 		# make mask for all flags; true = exposure is good, false = exposure is flagged
-		all_mask = ~global_flux_flags[i] & ~global_wcs_flags[i] & ~global_position_flags[i] & ~global_fwhm_flags[i]
+		all_mask = ~global_wcs_flags[i] & ~global_position_flags[i] & ~global_fwhm_flags[i] & ~global_flux_flags[i]
 
 		# calculate the medians of each night 
 		sc_flux_arr = []
@@ -590,7 +590,6 @@ def main(raw_args=None):
 			sc_bx_arr.extend([np.nanmean(night_times)])
 			sc_by_arr.extend([np.nanmedian(night_flux)])
 			sc_bye_arr.extend([measured_noise[j]])
-
 		
 		times_arr.append(np.array(sc_times_arr))
 		flux_arr.append(np.array(sc_flux_arr))
@@ -603,9 +602,12 @@ def main(raw_args=None):
 		global_x_array.append(np.array(df['X']))
 		global_y_array.append(np.array(df['Y']))
 		
-
-		n2n = np.nanstd(night_medians)
-		night_to_nights.append(n2n)
+		if len(night_medians) == 1:
+			n2n = np.nanstd(flux) # handle the special case of just a single night
+			night_to_nights.append(n2n)
+		else:
+			n2n = np.nanstd(night_medians)
+			night_to_nights.append(n2n)
 		night_to_nights_theory_calculated.append(np.nanmedian(night_errs_on_meds))
 		night_to_nights_theory_measured.append(np.nanmedian(measured_noise))
 

@@ -1,6 +1,6 @@
 import numpy as np 
 import matplotlib.pyplot as plt 
-plt.ioff()
+plt.ion()
 import pandas as pd 
 import argparse 
 import os 
@@ -35,7 +35,6 @@ def plot_injection_recovery(times, injected_flux, signal, freq, power, per_max_p
 
     for i in range(len(alias_lowers)):
         ax2.fill_between([alias_lowers[i], alias_uppers[i]], 0, 1, color=alias_colors[i], alpha=0.2)
-    breakpoint()
     return 
 
 def main(raw_args=None):
@@ -43,7 +42,7 @@ def main(raw_args=None):
     ap.add_argument("-field", required=True, help="Name of observed target field exactly as shown in raw FITS files.")
     ap.add_argument("-ffname", required=False, default='flat0000', help='Name of flat directory for light curves.')
     ap.add_argument("-p_min", required=False, default=1/24, help="Minimum period in days from which to draw injection signals", type=float)
-    ap.add_argument("-p_max_ratio", required=False, default=1.0, help="Maximum fraction of injected period to length of the time series", type=float)
+    ap.add_argument("-p_max_ratio", required=False, default=3.0, help="Maximum fraction of injected period to length of the time series", type=float)
     ap.add_argument("-a_min", required=False, default=0.001, help='Minimum amplitude of injected signals', type=float)
     ap.add_argument('-a_max', required=False, default=0.1, help='Maximum amplitude of injected signals', type=float)
     ap.add_argument('-detection_threshold', required=False, default=0.01, help='Maximum relative difference between injected and recovered period to consider simulation loop a success', type=float)
@@ -73,11 +72,11 @@ def main(raw_args=None):
     flux_err = np.array(lc_df['Flux Error'])
 
     # mask out flagged exposures 
-    flux_flag = np.array(lc_df['Low Flux Flag']).astype(bool)
+    # flux_flag = np.array(lc_df['Low Flux Flag']).astype(bool)
     wcs_flag = np.array(lc_df['WCS Flag']).astype(bool)
     pos_flag = np.array(lc_df['Position Flag']).astype(bool)
     fwhm_flag = np.array(lc_df['FWHM Flag']).astype(bool)
-    mask = ~(flux_flag | wcs_flag | pos_flag | fwhm_flag)
+    mask = ~( wcs_flag | pos_flag | fwhm_flag)
 
     times = times[mask]
     flux = flux[mask]
@@ -118,9 +117,9 @@ def main(raw_args=None):
         print(f'WARNING: n_sims/n_cells = {n_sims/n_cells:.2f}')
 
     # do an initial run of the periodogram to get the frequency grid so you don't have to compute it each simulation step
-    freq, pow = LombScargle(times, flux, flux_err).autopower(minimum_frequency=min_freq, maximum_frequency=max_freq)
+    freq, pow = LombScargle(times, flux, flux_err).autopower(minimum_frequency=min_freq, maximum_frequency=max_freq, samples_per_peak=5)
 
-    # calculate the window function power of the data over the frequency grid 
+# calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(times, np.ones_like(times), fit_mean=False, center_data=False).power(freq)
 
     # METHOD 1
@@ -155,11 +154,11 @@ def main(raw_args=None):
         amp_upper = amp_grid_edges[j+1]
 
 
-        # for first 10000 sims, sample cells with equal probability
-        if n_injected <= 10000:
+        # for first 20000 sims, sample cells with equal probability
+        if n_injected <= 20000:
             P = 1 
         else: 
-            # after first 10000 sims, sample cells with a Gaussian centered on 0.5 and standard deviation of 0.15 (so cells with success rates near 0 and 1 are rarely sampled)
+            # after first 20000 sims, sample cells with a Gaussian centered on 0.5 and standard deviation of 0.15 (so cells with success rates near 0 and 1 are rarely sampled)
             P = 1/np.sqrt(2*0.3) * np.exp(-(0.5-success_rate[j,i])**2 / (0.3**2))
         
         if np.random.uniform() < P: 
@@ -184,13 +183,25 @@ def main(raw_args=None):
             alias_uppers = [j*per+detection_threshold*j*per for j in aliases_to_check]
             alias_lowers = [j*per-detection_threshold*j*per for j in aliases_to_check]
             detection_in_range = [alias_lowers[i] < per_max_power < alias_uppers[i] for i in range(len(alias_lowers))]
-            # if sum(detection_in_range) > 0 and not detection_in_range[int((len(aliases_to_check)-1)/2)]:
-            #     plot_injection_recovery(times, injected_flux, signal, freq, power, per_max_power, per, window_fn_power, alias_lowers, alias_uppers)
-            #     breakpoint()
+            
+            # at longer periods, the 1% period accuracy detection criterion can fail simply because the grid is sparse. If the true period falls between the highest peak and either of its neighbors, also consider that a detection 
 
-            if sum(detection_in_range) > 0 and (power[np.argmax(power)] > window_fn_power[np.argmax(power)] * window_fn_threshold_factor): 
+            neighbor_detection = False
+            if np.argmax(power) > 0: # only check this case if the peak is not at the 0th element of the frequency grid (otherwise it will fail)
+                if 1/freq[np.argmax(power)] < per < 1/freq[np.argmax(power)-1]:
+                    neighbor_detection = True
+
+            if np.argmax(power) < len(power)-1: #similar idea here but on the other side
+                if 1/freq[np.argmax(power) + 1] < per < 1/freq[np.argmax(power)]:
+                        neighbor_detection = True
+            
+
+            if ((sum(detection_in_range) > 0)  or (neighbor_detection) )and (power[np.argmax(power)] > window_fn_power[np.argmax(power)] * window_fn_threshold_factor): 
                 recovery_counts[j,i] += 1
 
+                if np.argmax(power) < 0.2 and per < 100:
+                    plot_injection_recovery(times, injected_flux, signal, freq, power, per_max_power, per, window_fn_power, alias_lowers, alias_uppers)
+                    breakpoint()
             n_injected += 1   
         success_rate = recovery_counts / injection_counts
         if n_injected % 500 == 0 and n_injected != 0:

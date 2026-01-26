@@ -57,12 +57,12 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	n_ims = flux.shape[0]
 
 	# mask any cadences where the flux is negative for any of the sources 
-	mask = np.any(flux < 0,axis=1)
-	flux[mask] = np.nan 
-	flux_err[mask] = np.nan
+	# mask = np.any(flux < 0,axis=1)
+	# flux[mask] = np.nan 
+	# flux_err[mask] = np.nan
 
 	mask_save = np.zeros(n_ims, dtype='bool')
-	mask_save[np.where(mask)] = True
+	# mask_save[np.where(mask)] = True
 
 	# regressor_inds = np.arange(1,flux.shape[1]) # get the indices of the stars to use as the zero point calibrators; these represent the indices of the calibrators *in the data_dict arrays*
 
@@ -890,7 +890,7 @@ def main(raw_args=None):
 	weights_df.to_csv(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_weights.csv', index=0)
 	set_tierras_permissions(f'/data/tierras/lightcurves/{date}/{field}/{ffname}/{date}_{field}_weights.csv')
 	
-	ppb = 5 # set up bins for evaluating stddevs of lcs
+	ppb = 2 # set up bins for evaluating stddevs of lcs
 	n_bins = int(np.ceil(n_ims/ppb))
 	bin_inds = []
 	for i in range(n_bins):
