@@ -182,7 +182,7 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# v, l, h = sigmaclip(noise_ratios[~np.isnan(noise_ratios)], 2, 2)
 	# weights[np.where(noise_ratios[~np.isnan(noise_ratios)]>h)[0]] = 0
 
-	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=1).mask 
+	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=3).mask 
 	weights[sc_mask] = 0 	
 
 	weights /= sum(weights)

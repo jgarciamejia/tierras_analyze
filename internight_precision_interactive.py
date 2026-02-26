@@ -82,7 +82,10 @@ def gaia_query(file_list, plate_scale=0.432):
 								""".format(coord.ra.value-width.to(u.deg).value/2, coord.ra.value+width.to(u.deg).value/2, coord.dec.value-height.to(u.deg).value/2, coord.dec.value+height.to(u.deg).value/2)
 								)
 	res = job.get_results()
-	res['SOURCE_ID'].name = 'source_id' # why does this get returned in all caps? 
+	try:
+		res['SOURCE_ID'].name = 'source_id' # why does this sometims get returned in all caps? 
+	except:
+		pass
 
 	# cut to entries without masked pmra values; otherwise the crossmatch will break
 	problem_inds = np.where(res['pmra'].mask)[0]
@@ -111,17 +114,17 @@ def gaia_query(file_list, plate_scale=0.432):
 	tierras_pixel_coords = wcs.world_to_pixel(gaia_coords_tierras_epoch)
 
 	# add 2MASS data and pixel positions to the source table
-	res.add_column(twomass_res['_2MASS'][idx_gaia],name='2MASS',index=1)
+	# res.add_column(twomass_res['_2MASS'][idx_gaia],name='2MASS',index=1)
 	res.add_column(tierras_pixel_coords[0],name='X pix', index=2)
 	res.add_column(tierras_pixel_coords[1],name='Y pix', index=3)
-	res.add_column(gaia_coords_tierras_epoch.ra, name='ra_tierras', index=4)
-	res.add_column(gaia_coords_tierras_epoch.dec, name='dec_tierras', index=5)
-	res['Jmag'] = twomass_res['Jmag'][idx_gaia]
-	res['e_Jmag'] = twomass_res['e_Jmag'][idx_gaia]
-	res['Hmag'] = twomass_res['Hmag'][idx_gaia]
-	res['e_Hmag'] = twomass_res['e_Hmag'][idx_gaia]
-	res['Kmag'] = twomass_res['Kmag'][idx_gaia]
-	res['e_Kmag'] = twomass_res['e_Kmag'][idx_gaia]
+	# res.add_column(gaia_coords_tierras_epoch.ra, name='ra_tierras', index=4)
+	# res.add_column(gaia_coords_tierras_epoch.dec, name='dec_tierras', index=5)
+	# res['Jmag'] = twomass_res['Jmag'][idx_gaia]
+	# res['e_Jmag'] = twomass_res['e_Jmag'][idx_gaia]
+	# res['Hmag'] = twomass_res['Hmag'][idx_gaia]
+	# res['e_Hmag'] = twomass_res['e_Hmag'][idx_gaia]
+	# res['Kmag'] = twomass_res['Kmag'][idx_gaia]
+	# res['e_Kmag'] = twomass_res['e_Kmag'][idx_gaia]
 	
 	# determine which chip the sources fall on 
 	# 0 = bottom, 1 = top 
@@ -133,8 +136,7 @@ def gaia_query(file_list, plate_scale=0.432):
 	use_inds = np.where((tierras_pixel_coords[0]>0)&(tierras_pixel_coords[0]<im_shape[1]-1)&(tierras_pixel_coords[1]>0)&(tierras_pixel_coords[1]<im_shape[0]-1))[0]
 	res = res[use_inds]
 	res_full = copy.deepcopy(res)	
-
-	return res_full
+	return res
 
 def main(raw_args=None):
 	

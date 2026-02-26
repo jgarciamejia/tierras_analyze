@@ -97,6 +97,8 @@ def main(raw_args=None):
 	ap.add_argument("-force_reweight", required=False, default=False, help="Whether or not to force recalculation of reference star weights")
 	args = ap.parse_args(raw_args)
 
+	GAIN = 5.9 
+
 	#Access observation info
 	field = args.field
 	ffname = args.ffname
@@ -820,7 +822,7 @@ def main(raw_args=None):
 		best_corr_flux = None
 		flux_corr_save = np.zeros((n_dfs, len(times)))
 		# CAN WE REPLACE THIS LOOP WITH MATRIX MULTIPLICATION?
-		for i in range(n_dfs):			
+		for i in range(n_dfs):
 			# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
 			if target_gaia_id in ref_gaia_ids:
 				if i == 0:
@@ -837,7 +839,14 @@ def main(raw_args=None):
 			
 			weights = weights[ref_inds_loop]
 
-			# mearth_style_times[i] = time.time()-tmearth
+			# # do we need to add scintillation noise in quadrature BEFORE doing the ALC weighting?
+			# n_refs = len(np.where(weights != 0)[0])
+			# sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
+
+			# norms = np.nanmedian(flux[i], axis=0)
+			# flux_err_norm = flux_err[i,:] / norms
+			# flux_err_scaled = np.sqrt(flux_err_norm**2 + sigma_scint[:,np.newaxis]**2) * norms
+			# flux_err[i,] = flux_err_scaled
 				
 			mask_ = np.zeros(len(flux[i][:,tt]), dtype='int') 
 			mask_[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
@@ -848,7 +857,7 @@ def main(raw_args=None):
 			# use the weights calculated in mearth_style to create the ALC 
 			alc = np.matmul(flux[i][:,ref_inds_loop], weights)
 			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds_loop]**2, weights**2))
-				
+
 			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
 			target_flux = copy.deepcopy(flux[i][:,tt])
 			target_flux_err = copy.deepcopy(flux_err[i][:,tt])
@@ -856,16 +865,18 @@ def main(raw_args=None):
 			target_flux_err[mask_] = np.nan
 			corr_flux = target_flux / alc
 			rel_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
-			
+				
 			# normalize
 			norm = np.nanmedian(corr_flux)
 			corr_flux /= norm 
 			rel_flux_err /= norm
 
-			# inflate error by scintillation estimate (see Stefansson et al. 2017)
+			# OLD METHOD: inflate error by scintillation estimate (see Stefansson et al. 2017) AFTER ALC CORRECTION. UNCOMMENT TO REVERT TO WHAT WAS WORKING BEFORE 2/25/26
 			n_refs = len(np.where(weights != 0)[0])
 			sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
 			corr_flux_err = np.sqrt(rel_flux_err**2 + sigma_scint**2)
+
+			# corr_flux_err = rel_flux_err # NEW METHOD: since the scintillation is already included, just copy rel_flux_err
 
 			# sigma clip
 			corr_flux_sc = sigma_clip(corr_flux).data

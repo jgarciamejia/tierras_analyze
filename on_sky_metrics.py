@@ -69,19 +69,18 @@ def on_sky_metric_plot(year=None, live_plot=False):
     bounds2 = np.arange(-2, 12, 2) 
     norm2 = matplotlib.colors.BoundaryNorm(bounds2, custom_cmap.N)
 
-    # # if there is existing on sky metric data, read it in and set the first date that is a NaN in the arrays
-    # if os.path.exists(f'/data/tierras/analytics/{year}_on_sky_metrics.p'): 
-    #     on_sky_relative, on_sky_absolute, rects1, rects2, durations = pickle.load(open(f'/data/tierras/analytics/{year}_on_sky_metrics.p', 'rb'))
-    #     try:
-    #         first_nan_doy = np.where(np.isnan(np.ravel(on_sky_absolute.T)))[0][0]
-    #         current_date = date(year, 1, 1) + timedelta(days=int(first_nan_doy))
-    #         breakpoint()
-    #     except:
-    #         pass
-    # else:
-    rects1 = []
-    rects2 = []
-    durations = []
+    # if there is existing on sky metric data, read it in and set the first date that is a NaN in the arrays
+    if os.path.exists(f'/data/tierras/analytics/{year}_on_sky_metrics.p'): 
+        on_sky_relative, on_sky_absolute, rects1, rects2, durations = pickle.load(open(f'/data/tierras/analytics/{year}_on_sky_metrics.p', 'rb'))
+        try:
+            first_nan_doy = np.where(np.isnan(np.ravel(on_sky_absolute.T)))[0][0]
+            current_date = date(year, 1, 1) + timedelta(days=int(first_nan_doy))
+        except:
+            pass
+    else:
+        rects1 = []
+        rects2 = []
+        durations = []
 
     while current_date < today: 
         # calculate this night's duration.
@@ -194,6 +193,9 @@ def on_sky_metric_plot(year=None, live_plot=False):
             ax[1].cla()
                     
         i += 1
+    
+    on_sky_relative[np.where(on_sky_relative == 0)] = -0.1 # NaN any 0's that leaked through
+    on_sky_absolute[np.where(on_sky_absolute == 0)] = -0.1
 
     # plot again now that the loop is complete 
     masked_on_sky_relative  = np.ma.array(on_sky_relative, mask=np.isnan(on_sky_relative))
@@ -221,9 +223,9 @@ def on_sky_metric_plot(year=None, live_plot=False):
     cb2.ax.set_yticklabels(labels2)
     cb2.set_label('Time (hours)', fontsize=14)
 
-    for r in range(len(rects1)):
-        ax[0].add_patch(rects1[r])
-        ax[1].add_patch(rects2[r])
+    # for r in range(len(rects1)):
+    #     ax[0].add_patch(rects1[r])
+    #     ax[1].add_patch(rects2[r])
 
     ax[0].tick_params(labelsize=12)
     ax[1].tick_params(labelsize=12)
@@ -232,15 +234,58 @@ def on_sky_metric_plot(year=None, live_plot=False):
     ax[1].set_xticks([0, 4, 8, 12, 17, 21, 26, 30, 34, 39, 43, 47], ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
     fig.tight_layout()
 
+    
+
+    # fig.savefig(f'/data/tierras/analytics/{year}_on_sky_metrics.png', dpi=300)
+
+    # do a plot of just the absolute time 
+    fig, ax = plt.subplots(1,1,figsize=(12,2.))
+    a3 = ax.imshow(masked_on_sky_absolute, interpolation='none', cmap=custom_cmap, norm=norm2)
+
+    divider3 = make_axes_locatable(ax)
+    cax3 = divider3.append_axes("right", size="2%", pad=0.1)
+    cb3 = fig.colorbar(a3, norm=norm2, cax=cax3)
+    cb3.ax.tick_params(labelsize=12) 
+    labels3 =  cb3.ax.get_yticklabels()
+    labels3[0] = matplotlib.text.Text(1, -2, 'No Data')
+    cb3.ax.set_yticklabels(labels3)
+    cb3.set_label('Time (hours)', fontsize=14)
+
+    # add rects 
+    current_date = date.fromisoformat(f'{year}0101')
+
+    rects2 = []
+    while current_date < today:
+        current_date += timedelta(days=1)
+        if i % 7 == 0 and i != 0:
+            week += 1
+
+        rects2.append(Rectangle((week - 0.5, i%7 - 0.5), 1, 1,
+                         facecolor='none',  # No fill color
+                         edgecolor='white', # Border color
+                         linewidth=1.5)       # Border thickness
+                    )    
+        i += 1
+    for r in range(len(rects2)):
+        ax.add_patch(rects2[r])
+
+    ax.tick_params(labelsize=12)
+    ax.set_yticks([])
+    ax.set_xticks([0, 4, 8, 12, 17, 21, 26, 30, 34, 39, 43, 47], ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+    fig.tight_layout()
+    fig.savefig(f'/data/tierras/analytics/{year}_on_sky_absolute.png', dpi=300)
+
+
     # now that things have been plotted, update the arrays to have 0s on nights with no data instead of -0.1
     on_sky_relative[np.where(on_sky_relative == -0.1)] = 0.
     on_sky_absolute[np.where(on_sky_absolute == -0.1)] = 0.
+    breakpoint()
 
-    fig.savefig(f'/data/tierras/analytics/{year}_on_sky_metrics.png', dpi=300)
+    breakpoint()
     plt.close('all')
 
     pickle.dump((on_sky_relative, on_sky_absolute, rects1, rects2, durations), open(f'/data/tierras/analytics/{year}_on_sky_metrics.p', 'wb'))
 
     
 if __name__ == '__main__':
-    on_sky_metric_plot(year=2025, live_plot=True)
+    on_sky_metric_plot(year=2024, live_plot=True)

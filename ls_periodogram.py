@@ -344,6 +344,13 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
 
     plt.tight_layout()
 
+    # save data file? 
+    # phased_model = sine_model(phased_x, params[0], params[1])
+    # output_dict = {'x_phase':phased_x, 'y_phase':phased_y, 'y_err_phase':phased_y_err, 'model_phase':phased_model}
+    # output_df = pd.DataFrame(output_dict)
+    # output_df.to_csv(f'/home/ptamburo/{target}_phased_data.csv',index=0)
+    # breakpoint()
+
     return fig, (ax1, ax2, ax4)
 
 def main(raw_args=None):
