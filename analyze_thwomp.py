@@ -88,5 +88,52 @@ def main(raw_args=None):
     n_sources = len(common_source_ids)
     print(f'{n_sources} sources common across all nights.')
 
-    # placeholder so the file is importable; rest of main() added in later tasks
-    return
+    # ── 3. Count total images and determine aperture file list ─────────────────
+    # Use first night's phot files as the template for aperture sizes
+    first_phot_files = sorted(
+        [f for f in glob(date_list[0] + '/**phot**.parquet') if 'variable' not in f],
+        key=lambda x: float(x.split('_')[-1].split('.parquet')[0])
+    )
+    if not first_phot_files:
+        raise RuntimeError(f'No photometry files found for {field} on {dates[0]}.')
+
+    if ap_rad is not None:
+        radii = np.array([float(f.split('_')[-1].split('.parquet')[0]) for f in first_phot_files])
+        df_ind = int(np.where(radii == ap_rad)[0][0])
+        n_dfs = 1
+        phot_files_template = [first_phot_files[df_ind]]
+    else:
+        n_dfs = len(first_phot_files)
+        df_ind = None
+        phot_files_template = first_phot_files
+
+    n_ims = 0
+    for path in date_list:
+        pf = [f for f in glob(path + '/**phot**.parquet') if 'variable' not in f]
+        if pf:
+            n_ims += len(pq.read_table(pf[0]))
+
+    print(f'{n_ims} total images across {len(dates)} nights, {n_dfs} aperture(s).')
+
+    # ── 4. Identify the Tierras target star ────────────────────────────────────
+    hdr = fits.open(glob(fpath + f'{dates[-1]}/{field}/{ffname}/*.fit')[0])[0].header
+    targ_x_pix = hdr['CAT-X']
+    targ_y_pix = hdr['CAT-Y']
+    tierras_target_id = identify_target_gaia_id(
+        field, source_dfs[-1], x_pix=targ_x_pix, y_pix=targ_y_pix)
+    print(f'Target Gaia ID: {tierras_target_id}')
+
+    # ── 5. Select sources for output (target + G_RP < rp_bright_limit) ────────
+    targ_df_idx = np.where(source_dfs[0]['source_id'] == tierras_target_id)[0][0]
+    common_rp = np.array([
+        source_dfs[0].iloc[np.where(source_dfs[0]['source_id'] == sid)[0][0]]['phot_rp_mean_mag']
+        for sid in common_source_ids
+    ])
+    targ_common_idx = np.where(common_source_ids == tierras_target_id)[0][0]
+    output_source_inds = np.where(
+        (common_rp < rp_bright_limit) | (common_source_ids == tierras_target_id)
+    )[0]
+    print(f'Will produce light curves for {len(output_source_inds)} sources '
+          f'(target + G_RP < {rp_bright_limit}).')
+
+    return  # placeholder; removed in Task 3
