@@ -47,20 +47,24 @@ def main(raw_args=None):
     date_list = glob(f'/data/tierras/photometry/**/{field}/{ffname}')
     date_list = np.array(sorted(date_list, key=lambda x: int(x.split('/')[4])))
 
-    if os.path.exists(f'/data/tierras/fields/{field}/ignore_dates.txt'):
-        with open(f'/data/tierras/fields/{field}/ignore_dates.txt') as f:
-            ignore_dates = [ln.strip() for ln in f.readlines()]
-        delete_inds = [i for i, p in enumerate(date_list) if p.split('/')[4] in ignore_dates]
-        date_list = np.delete(date_list, delete_inds)
-
     if args.use_nights is not None:
         use_nights = args.use_nights.replace(' ', '').split(',')
         keep = [j for j in range(len(date_list))
                 if any(n in date_list[j] for n in use_nights)]
         date_list = date_list[keep]
 
+    if os.path.exists(f'/data/tierras/fields/{field}/ignore_dates.txt'):
+        with open(f'/data/tierras/fields/{field}/ignore_dates.txt') as f:
+            ignore_dates = [ln.strip() for ln in f.readlines()]
+        delete_inds = [i for i, p in enumerate(date_list) if p.split('/')[4] in ignore_dates]
+        date_list = np.delete(date_list, delete_inds)
+
     dates = np.array([p.split('/')[4] for p in date_list])
     print(f'Found {len(dates)} nights for {field}: {list(dates)}')
+
+    if len(date_list) == 0:
+        raise RuntimeError(f'No photometry found for {field} under ffname={ffname}. '
+                           f'Check that data exists at /data/tierras/photometry/**/{field}/{ffname}')
 
     # ── 2. Read source catalogs; find common source IDs across all nights ───────
     source_dfs, source_ids = [], []
@@ -79,7 +83,7 @@ def main(raw_args=None):
     source_inds = []
     for df in source_dfs:
         id_to_idx = {sid: idx for idx, sid in enumerate(df['source_id'])}
-        source_inds.append([id_to_idx[sid] for sid in common_source_ids])
+        source_inds.append([id_to_idx[sid] for sid in common_source_ids if sid in id_to_idx])
 
     n_sources = len(common_source_ids)
     print(f'{n_sources} sources common across all nights.')
