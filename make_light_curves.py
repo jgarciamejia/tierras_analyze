@@ -1,5 +1,6 @@
 
 from analyze_global import main as analyze_global_main
+from analyze_thwomp import main as analyze_thwomp_main
 
 import numpy as np 
 import os 
@@ -86,8 +87,15 @@ if all_fields_last_week:
             target_list.extend(os.listdir(f'/data/tierras/photometry/{date_str}'))
         date += timedelta(days=1)
     target_list = np.unique(target_list)
+target_list = list(target_list)
 
 print(f'Updating light curves for {len(target_list)} fields.')
+for i in range(len(priority_targets)):
+    shift_ind = np.where([j == priority_targets[i] for j in target_list])[0]
+    if len(shift_ind) == 0: # if the target is in the priority list but was not observed, skip it 
+        continue
+    target_list.remove(priority_targets[i])
+    target_list.insert(0, priority_targets[i])
 
 for j in range(len(target_list)):
     target = target_list[j]
@@ -99,5 +107,16 @@ for j in range(len(target_list)):
     args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
     print(args)
     analyze_global_main(args.split())
+
+# THWOMP: run analyze_thwomp for any field that has a sibling {field}_ref
+print('Checking for THWOMP targets...')
+thwomp_targets = [t for t in target_list
+                  if not t.endswith('_ref')
+                  and f'{t}_ref' in target_list]
+print(f'Found {len(thwomp_targets)} THWOMP target(s): {thwomp_targets}')
+for target in thwomp_targets:
+    print(f'Running THWOMP analysis for {target}')
+    thwomp_args = f'-field {target} -ffname {ffname}'
+    analyze_thwomp_main(thwomp_args.split())
 
 

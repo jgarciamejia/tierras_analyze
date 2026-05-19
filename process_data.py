@@ -1,5 +1,6 @@
 from ap_phot import main as ap_phot_main
 from analyze_global import main as analyze_global_main
+from analyze_thwomp import main as analyze_thwomp_main
 from build_tierras_db import main as build_tierras_db_main
 
 import numpy as np 
@@ -127,6 +128,17 @@ if not skip_lightcurves:
         args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
         print(args)
         analyze_global_main(args.split())
+
+    # THWOMP: run analyze_thwomp for any field that has a sibling {field}_ref
+    print('Checking for THWOMP targets...')
+    thwomp_targets = [t for t in target_list
+                      if not t.endswith('_ref')
+                      and f'{t}_ref' in target_list]
+    print(f'Found {len(thwomp_targets)} THWOMP target(s): {thwomp_targets}')
+    for target in thwomp_targets:
+        print(f'Running THWOMP analysis for {target}')
+        thwomp_args = f'-field {target} -ffname {ffname}'
+        analyze_thwomp_main(thwomp_args.split())
 
 # part 3: update the database
 if not skip_lightcurves: # only run if light curves have been made
