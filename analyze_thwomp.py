@@ -101,11 +101,9 @@ def main(raw_args=None):
         radii = np.array([float(f.split('_')[-1].split('.parquet')[0]) for f in first_phot_files])
         df_ind = int(np.where(radii == ap_rad)[0][0])
         n_dfs = 1
-        phot_files_template = [first_phot_files[df_ind]]
     else:
         n_dfs = len(first_phot_files)
         df_ind = None
-        phot_files_template = first_phot_files
 
     n_ims = 0
     for path in date_list:
@@ -217,6 +215,20 @@ def main(raw_args=None):
     ref_date_list = glob(f'/data/tierras/photometry/**/{ref_field}/{ffname}')
     ref_date_list = np.array(sorted(ref_date_list, key=lambda x: int(x.split('/')[4])))
     ref_dates = np.array([p.split('/')[4] for p in ref_date_list])
+
+    if len(ref_date_list) == 0:
+        raise RuntimeError(
+            f'No photometry found for reference field {ref_field} under ffname={ffname}. '
+            f'Run ap_phot on {ref_field} before analyze_thwomp.')
+
+    if os.path.exists(f'/data/tierras/fields/{ref_field}/ignore_dates.txt'):
+        with open(f'/data/tierras/fields/{ref_field}/ignore_dates.txt') as f:
+            ref_ignore_dates = [ln.strip() for ln in f.readlines()]
+        ref_delete_inds = [i for i, p in enumerate(ref_date_list)
+                           if p.split('/')[4] in ref_ignore_dates]
+        ref_date_list = np.delete(ref_date_list, ref_delete_inds)
+        ref_dates = np.array([p.split('/')[4] for p in ref_date_list])
+
     print(f'Found {len(ref_dates)} nights for {ref_field}.')
 
     # source catalog for ref field
@@ -334,6 +346,19 @@ def main(raw_args=None):
         weights_ordered = np.array([weight_map.get(sid, 0.0)
                                     for sid in common_source_ids_ref])
 
+        # warn if any star with non-zero weight is absent from the common ref source list
+        missing_weighted = [
+            rid for rid, w in zip(weight_ref_ids, weights_j)
+            if w > 0 and rid not in set(common_source_ids_ref)
+        ]
+        if missing_weighted:
+            warnings.warn(
+                f'Aperture {ap_col}: {len(missing_weighted)} source(s) with non-zero weight '
+                f'in weights.csv are absent from common_source_ids_ref and will be excluded '
+                f'from the ALC. Their total weight was '
+                f'{sum(weights_j[list(weight_ref_ids).index(r)] for r in missing_weighted):.4f}.'
+            )
+
         for n_idx in range(len(dates)):
             night_date = dates[n_idx]
 
@@ -414,9 +439,8 @@ def main(raw_args=None):
     fwhm_mask_arr = np.zeros(n_ims, dtype='int')
     fwhm_mask_arr[np.where(fwhm_x > 4)[0]] = 1
 
+    short_night_mask = np.zeros(n_ims, dtype='bool')
     quality_mask = (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask_arr == 1) | (flux_mask == 1)
-    mask_inv = ~quality_mask
-    print(f'Quality mask: {np.sum(mask_inv)}/{n_ims} exposures pass.')
 
     # ── 12. Drop nights below minimum_night_duration ───────────────────────────
     dates_to_remove = []
@@ -425,11 +449,16 @@ def main(raw_args=None):
         tot_exp = np.nansum(exposure_times[night_inds]) / 3600
         if tot_exp <= minimum_night_duration:
             print(f'{dates[i]} dropped: {tot_exp:.2f}h < {minimum_night_duration}h.')
+            short_night_mask[night_inds] = True
             dates_to_remove.append(i)
     if dates_to_remove:
         dates      = np.delete(dates, dates_to_remove)
         date_list  = np.delete(date_list, dates_to_remove)
         times_list = [t for i, t in enumerate(times_list) if i not in dates_to_remove]
+    quality_mask |= short_night_mask
+
+    mask_inv = ~quality_mask
+    print(f'Quality mask: {np.sum(mask_inv)}/{n_ims} exposures pass.')
 
     # ── 13. Scintillation noise ─────────────────────────────────────────────────
     sigma_s = (0.09 * 130**(-2/3) * airmasses**(7/4)
