@@ -395,10 +395,6 @@ def main(raw_args=None):
             alc_v    = alc_raw[valid]
             alc_e_v  = alc_err_raw[valid]
 
-            norm_ref = np.nanmedian(alc_v)
-            alc_v   /= norm_ref
-            alc_e_v /= norm_ref
-
             # extrapolation warnings (times in days; convert gap to minutes)
             t_targ = times[targ_inds]
             leading  = t_targ[t_targ < t_ref_v[0]]
