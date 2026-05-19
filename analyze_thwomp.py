@@ -456,14 +456,9 @@ def main(raw_args=None):
     mask_inv = ~quality_mask
     print(f'Quality mask: {np.sum(mask_inv)}/{n_ims} exposures pass.')
 
-    # ── 13. Scintillation noise ─────────────────────────────────────────────────
+    # ── 13. Scintillation noise (base term; per-aperture n_refs applied in loop) ──
     sigma_s = (0.09 * 130**(-2/3) * airmasses**(7/4)
                * (2 * exposure_times)**(-1/2) * np.exp(-2306 / 8000))
-
-    # effective n_refs: count non-zero weights in weights_df (use first aperture col)
-    first_ap_col = ref_first_phot[0].split('_')[-1].split('.parquet')[0]
-    n_nonzero_weights = int(np.sum(np.array(weights_df[first_ap_col]) > 0))
-    sigma_scint = (1.5 * sigma_s * np.sqrt(1.0 + 1.0 / max(n_nonzero_weights, 1)))
 
     # ── 14. Aperture loop — ALC correction and scatter minimisation ─────────────
     best_std          = np.inf
@@ -518,13 +513,20 @@ def main(raw_args=None):
         corr_flux_err = np.sqrt(
             (F_err_m / alc_2d)**2
             + (F_m * alc_err_2d / alc_2d**2)**2
-            + (sigma_scint[:, None])**2
         )
 
         norms = np.nanmedian(corr_flux, axis=0)
         norms = np.where(norms == 0, 1.0, norms)
         corr_flux     /= norms
         corr_flux_err /= norms
+
+        # scintillation added after normalization so it stays in fractional-flux units
+        ap_col_j = (ref_first_phot[j].split('_')[-1].split('.parquet')[0]
+                    if ap_rad is None else str(float(ap_rad)))
+        n_nonzero_j = (int(np.sum(np.array(weights_df[ap_col_j]) > 0))
+                       if ap_col_j in weights_df.columns else 1)
+        sigma_scint_j = 1.5 * sigma_s * np.sqrt(1.0 + 1.0 / max(n_nonzero_j, 1))
+        corr_flux_err = np.sqrt(corr_flux_err**2 + sigma_scint_j[:, None]**2)
 
         # 5-minute scatter on target, unmasked exposures with valid ALC
         use = mask_inv & valid_alc
