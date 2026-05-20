@@ -288,4 +288,4 @@ def on_sky_metric_plot(year=None, live_plot=False):
 
     
 if __name__ == '__main__':
-    on_sky_metric_plot(year=2024, live_plot=True)
+    on_sky_metric_plot(year=2026, live_plot=True)

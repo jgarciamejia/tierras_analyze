@@ -200,7 +200,7 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
         params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase]) 
         print(f'Amplitude: {abs(params[0])*1e3:.1f} ppt')
         
-        phase_bin = 0.05
+        phase_bin = 0.1
         n_bin = int(1/phase_bin)
         bx = np.zeros(n_bin)
         by = np.zeros(n_bin)
@@ -315,7 +315,7 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase]) 
     print(f'Amplitude: {abs(params[0])*1e3:.1f} ppt')
     
-    phase_bin = 0.05
+    phase_bin = 0.1
     n_bin = int(1/phase_bin)
     bx = np.zeros(n_bin)
     by = np.zeros(n_bin)
@@ -353,52 +353,13 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
 
     return fig, (ax1, ax2, ax4)
 
-def main(raw_args=None):
-    ap = argparse.ArgumentParser()
-
-    ap.add_argument('-field', required=True, help='Name of field')
-    ap.add_argument('-gaia_id', required=False, default=None, help='Gaia source_id of target in field for which to run periodogram. If None passed, will use the field name as the target.')
-    ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flat directory to use for reading light curves.')
-    ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
-    ap.add_argument('-quality_mask', required=False, default='True', type=str)
-    ap.add_argument('-flux_flag_level', required=False, default=0.8, type=float, help="Should be between 0 and 1. If passed, apply custom masking on flux levels using normalized ALC. Points below flux_flag_level will be ignored.")
-    ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
-    ap.add_argument('-autofreq', required=False, default='True', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
-    ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')
-    ap.add_argument('-per_hi', required=False, default=100, type=float, help='Upper period (in days) to use to establish frequency grid IF autofreq is False.')
-    ap.add_argument('-per_resolution', required=False, default=15/86400, type=float, help='Period resolution (in days) to use to establish frequency grid IF autofreq is False.')
-    ap.add_argument('-baseline_restarts', required=False, default='True', type=str, help='Re-baseline the data using the camera restart dates in /data/tierras/fields/camera_restart_dates.csv')
-    ap.add_argument('-bin_days', required=False, default=1, type=int, help='Number of days to bin over for displaying binned data on the plot (helpful for visualizing faint signals); defaults to 1.')
-    args = ap.parse_args(raw_args)
-    field = args.field
-    gaia_id = args.gaia_id
-    ffname = args.ffname 
-    median_filter_w = args.median_filter_w
-    quality_mask = t_or_f(args.quality_mask)
-    flux_flag_level = args.flux_flag_level
-    sc = t_or_f(args.sigmaclip)
-    autofreq = t_or_f(args.autofreq)
-    global per_lower, per_upper, bin_days 
-    per_lower = args.per_low
-    per_upper = args.per_hi
-    per_res = args.per_resolution
-    baseline_restarts = t_or_f(args.baseline_restarts)
-    bin_days = args.bin_days
-    if gaia_id is None:
-        target = field 
-    else:
-        target = f'Gaia DR3 {gaia_id}'
-
-    if autofreq: 
-        pers = None 
-    else:
-        pers = np.arange(per_lower, per_upper, per_res)
-
+def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, quality_mask=True, flux_flag_level=0.9, plot_mirror_fit=False, sigma_clip=False):
     try:
         df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/{target}_global_lc.csv', comment='#')
         ancillary_df = pd.read_csv(f'/data/tierras/fields/{field}/global_ancillary_data.csv')
     except:
         return None, None, None
+    
     x = np.array(df['BJD TDB'])
     global x_offset 
     x_offset = x[0]
@@ -480,20 +441,21 @@ def main(raw_args=None):
     mirror_dates = np.array(mirror_df['jd'])
     mirror_fit = np.zeros(len(x))
 
-    fig, ax = plt.subplots(2, figsize=(8,6), sharex=True)
-    ax[0].plot(x-x_offset, alc_norm, label='Normalized ALC')
-    ax[0].tick_params(labelsize=12)
-    ax[0].grid(alpha=0.5)
-    ax[0].set_ylabel('Norm. ALC flux', fontsize=14)
+    if plot_mirror_fit:
+        fig, ax = plt.subplots(2, figsize=(8,6), sharex=True)
+        ax[0].plot(x-x_offset, alc_norm, label='Normalized ALC')
+        ax[0].tick_params(labelsize=12)
+        ax[0].grid(alpha=0.5)
+        ax[0].set_ylabel('Norm. ALC flux', fontsize=14)
 
-    for i in range(len(mirror_dates)):
-        labeled = False
-        if mirror_dates[i] > x[0]:
-            if not labeled:
-                ax[0].axvline(mirror_dates[i]-x_offset, color='k', ls='--', label='Mirror cleaning dates')
-                labeled = True
-            else:
-                ax[0].axvline(mirror_dates[i]-x_offset, color='k', ls='--')
+        for i in range(len(mirror_dates)):
+            labeled = False
+            if mirror_dates[i] > x[0]:
+                if not labeled:
+                    ax[0].axvline(mirror_dates[i]-x_offset, color='k', ls='--', label='Mirror cleaning dates')
+                    labeled = True
+                else:
+                    ax[0].axvline(mirror_dates[i]-x_offset, color='k', ls='--')
 
     labeled = False
     for i in range(len(mirror_dates)+1):
@@ -523,34 +485,36 @@ def main(raw_args=None):
 
         
         fit = coeffs[0]*(x[inds] - x[maxima_indices[0]]) +coeffs[1]
-       
-
-        if not labeled:
-            ax[0].plot(x[maxima_indices]-x_offset, alc_norm[maxima_indices], 'rx', label='Fit points')
-        else:
-            ax[0].plot(x[maxima_indices]-x_offset, alc_norm[maxima_indices], 'rx')
+    
+        if plot_mirror_fit:
+            if not labeled:
+                ax[0].plot(x[maxima_indices]-x_offset, alc_norm[maxima_indices], 'rx', label='Fit points')
+            else:
+                ax[0].plot(x[maxima_indices]-x_offset, alc_norm[maxima_indices], 'rx')
         
 
         mirror_fit[inds] = fit 
     
-        if not labeled:
-            ax[0].plot(x[inds]-x_offset, fit, color='tab:orange', label='Mirror dirtying fit')
-            labeled = True
-        else:
-            ax[0].plot(x[inds]-x_offset, fit, color='tab:orange')
+        if plot_mirror_fit:
+            if not labeled:
+                ax[0].plot(x[inds]-x_offset, fit, color='tab:orange', label='Mirror dirtying fit')
+                labeled = True
+            else:
+                ax[0].plot(x[inds]-x_offset, fit, color='tab:orange')
     
-    ax[0].legend()
 
     mirror_corrected_flux = (alc_norm)/mirror_fit
 
-    ax[1].plot(x-x_offset, mirror_corrected_flux, label='Dirtying-corrected ALC flux')
-    ax[1].axhline(flux_flag_level, color='tab:red', ls='--', label='Flux flag level')
-    ax[1].legend()
-    ax[1].set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
-    ax[1].grid(alpha=0.5)
-    ax[1].set_ylabel('Corrected Flux', fontsize=14)
-    ax[1].tick_params(labelsize=12)
-    fig.tight_layout()
+    if plot_mirror_fit:
+        ax[0].legend()
+        ax[1].plot(x-x_offset, mirror_corrected_flux, label='Dirtying-corrected ALC flux')
+        ax[1].axhline(flux_flag_level, color='tab:red', ls='--', label='Flux flag level')
+        ax[1].legend()
+        ax[1].set_xlabel(f'BJD TDB - {x_offset:.4f}', fontsize=14)
+        ax[1].grid(alpha=0.5)
+        ax[1].set_ylabel('Corrected Flux', fontsize=14)
+        ax[1].tick_params(labelsize=12)
+        fig.tight_layout()
 
     # now mask out low flux nights 
 
@@ -605,6 +569,62 @@ def main(raw_args=None):
         # plt.plot(x,y_filter)
         # plt.plot(x,mu*y/y_filter)
         y =  mu*y/(y_filter)
+
+    if sigma_clip:
+        v, l, h = sigmaclip(y)
+        sc_inds = np.where((y > l) & (y < h))[0]
+        x     = x[sc_inds]
+        y     = y[sc_inds]
+        y_err = y_err[sc_inds]
+
+    return x, y, y_err
+
+def main(raw_args=None):
+    ap = argparse.ArgumentParser()
+
+    ap.add_argument('-field', required=True, help='Name of field')
+    ap.add_argument('-gaia_id', required=False, default=None, help='Gaia source_id of target in field for which to run periodogram. If None passed, will use the field name as the target.')
+    ap.add_argument('-ffname', required=False, default='flat0000', help='Name of flat directory to use for reading light curves.')
+    ap.add_argument('-median_filter_w', required=False, type=float, default=0, help='Width of median filter in days to regularize data')
+    ap.add_argument('-quality_mask', required=False, default='True', type=str)
+    ap.add_argument('-flux_flag_level', required=False, default=0.8, type=float, help="Should be between 0 and 1. If passed, apply custom masking on flux levels using normalized ALC. Points below flux_flag_level will be ignored.")
+    ap.add_argument('-sigmaclip', required=False, default='True', type=str, help='Whether or not to sigma clip the data.')
+    ap.add_argument('-autofreq', required=False, default='True', type=str, help='Whether or not to use astropys default algorithm to establish the frequency grid. If False, per_low, per_hi, and per_resolution will be used. ')
+    ap.add_argument('-per_low', required=False, default=1/24, type=float, help='Lower period (in days) to use to establish frequency grid IF autofreq is False.')
+    ap.add_argument('-per_hi', required=False, default=100, type=float, help='Upper period (in days) to use to establish frequency grid IF autofreq is False.')
+    ap.add_argument('-per_resolution', required=False, default=15/86400, type=float, help='Period resolution (in days) to use to establish frequency grid IF autofreq is False.')
+    ap.add_argument('-baseline_restarts', required=False, default='True', type=str, help='Re-baseline the data using the camera restart dates in /data/tierras/fields/camera_restart_dates.csv')
+    ap.add_argument('-bin_days', required=False, default=1, type=int, help='Number of days to bin over for displaying binned data on the plot (helpful for visualizing faint signals); defaults to 1.')
+    ap.add_argument('-plot_mirror_fit', required=False, default='True', help='Whether or not to plot the mirror dirtying fit')
+    args = ap.parse_args(raw_args)
+    field = args.field
+    gaia_id = args.gaia_id
+    ffname = args.ffname 
+    median_filter_w = args.median_filter_w
+    quality_mask = t_or_f(args.quality_mask)
+    flux_flag_level = args.flux_flag_level
+    sc = t_or_f(args.sigmaclip)
+    autofreq = t_or_f(args.autofreq)
+    global per_lower, per_upper, bin_days 
+    per_lower = args.per_low
+    per_upper = args.per_hi
+    per_res = args.per_resolution
+    baseline_restarts = t_or_f(args.baseline_restarts)
+    bin_days = args.bin_days
+    plot_mirror_fit = t_or_f(args.plot_mirror_fit)
+    if gaia_id is None:
+        target = field 
+    else:
+        target = f'Gaia DR3 {gaia_id}'
+
+    if autofreq: 
+        pers = None 
+    else:
+        pers = np.arange(per_lower, per_upper, per_res)
+
+    
+
+    x, y, y_err = load_data(field, ffname, target, median_filter_w=median_filter_w, baseline_restarts=baseline_restarts, quality_mask=quality_mask, flux_flag_level=flux_flag_level, plot_mirror_fit=plot_mirror_fit)
 
     x, y, y_err, bx, by, bye, per, freq, power, x_offset = periodogram(x, y, y_err, pers=pers, sc=sc)
 

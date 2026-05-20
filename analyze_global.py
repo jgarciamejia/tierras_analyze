@@ -190,18 +190,6 @@ def main(raw_args=None):
 	
 	dates = np.array([i.split('/')[4] for i in date_list])
 
-	# skip some nights of processing for TIC362144730
-	# TODO: automate this process 
-	if field == 'TIC362144730':
-		bad_dates = ['20240519', '20240520', '20240526', '20240528', '20240531', '20240605', '20240607', '20240609', '20240610', '20240706', '20240707', '20240708', '20240710', '20240713', '20240716', '20240717', '20240919', '20240921', '20240922']
-		dates_to_remove = []
-		for i in range(len(bad_dates)):
-			dates_to_remove.append(np.where(dates == bad_dates[i])[0][0])
-		dates = np.delete(dates, dates_to_remove)
-		date_list = np.delete(date_list, dates_to_remove)		
-
-	# dates = dates[0:18]
-	# date_list = date_list[0:18]	
 
 	# determine the average field pointing on the first night so we can query for *all* sources
 	if cut_contaminated:
@@ -261,9 +249,12 @@ def main(raw_args=None):
 	# remove sources if they don't have photometry on all other nights
 	inds_to_remove = []
 	for i in range(len(common_source_ids)):
-		for j in source_ids[1:]:
-			if common_source_ids[i] not in j:
+		for j, source_id_list in enumerate(source_ids[1:]):
+			if common_source_ids[i] not in source_id_list:
+				# if common_source_ids[i] == 1227705135863076864:
+				# 	print(date_list[j+1])
 				inds_to_remove.append(i)
+
 	if len(inds_to_remove) > 0:
 		inds_to_remove = np.array(inds_to_remove)
 		common_source_ids = np.delete(common_source_ids, inds_to_remove)
@@ -271,7 +262,8 @@ def main(raw_args=None):
 		common_x_pix = np.delete(common_x_pix, inds_to_remove)
 		common_y_pix = np.delete(common_y_pix, inds_to_remove)
 
-	
+	# breakpoint() 
+
 	# get the index mapping between the source dfs and the photometry source names
 	source_inds = []
 	for i in range(len(source_dfs)):
@@ -538,7 +530,7 @@ def main(raw_args=None):
 		start = stop
 
 	print(f'Read-in: {time.time()-t1}')
-
+	
 	# write out a global ancillary .csv 
 	global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
 	global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])	
@@ -741,10 +733,7 @@ def main(raw_args=None):
 		ref_inds = np.arange(max_refs)
 	else:
 		ref_gaia_ids = common_source_ids
-		ref_inds = np.arange(len(common_source_ids))
-
-
-	
+		ref_inds = np.arange(len(common_source_ids))	
 
 	# reweighting every field every night is probably overkill (note that I haven't actually tested this, and to get the best representation of your light curve with a given est of data you probably WOULD want to reweight)
 	# use an adaptive criterion to determine if the weighting should be done and written to disk OR restored from disk: 
@@ -783,6 +772,20 @@ def main(raw_args=None):
 			weights_arr[:,i] = weights_df[key]	
 			i += 1
 
+	# last check: make sure the weights arry has weights for the same number of stars as the flux array
+	if weights_arr.shape[0] != flux.shape[2]:
+		reweight = True 
+		print(f'Weighting {len(ref_inds)} reference stars...')
+		weights_arr = np.zeros((len(ref_inds), n_dfs))
+		for i in range(n_dfs):
+			print(f'{i+1} of {n_dfs}')
+			flux_arr = binned_flux[i][:,ref_inds]
+			flux_err_arr = binned_flux_err[i][:,ref_inds]
+			nl_flag_arr = binned_nl_flags[i][:,ref_inds]
+			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+			weights_arr[:, i] = weights
+		
+
 	if reweight or force_reweight:
 		# save a csv with the weights to the light curve directory 
 		weights_dict = {'Ref ID':common_source_ids[ref_inds]}
@@ -801,163 +804,306 @@ def main(raw_args=None):
 	# pre compute the scintillation
 	sigma_s = 0.09*130**(-2/3)*airmasses**(7/4)*(2*exposure_times)**(-1/2)*np.exp(-2306/8000)
 
+
+	in_refs    = np.isin(common_source_ids, ref_gaia_ids) 
+	target_idx = np.flatnonzero(common_source_ids == tierras_target_id)
+	target_idx = target_idx[0] if len(target_idx) else None
+
+	# Pre-allocate best-result storage
+	best_std      = np.full(n_sources, np.inf)
+	best_ap_idx   = np.zeros(n_sources, dtype=int)
+	_shape        = (n_ims, n_sources)
+	best_corr_flux     = np.full(_shape, np.nan, dtype='float32')
+	best_corr_flux_err = np.full(_shape, np.nan, dtype='float32')
+	best_raw_flux      = np.full(_shape, np.nan, dtype='float32')
+	best_raw_flux_err  = np.full(_shape, np.nan, dtype='float32')
+	best_alc           = np.full(_shape, np.nan, dtype='float32')
+	best_alc_err       = np.full(_shape, np.nan, dtype='float32')
+
 	mask_inv = ~mask
-	for tt in range(len(common_source_ids)):
-		tloop = time.time()
-		if common_source_ids[tt] == tierras_target_id:
-			target = field
-			target_gaia_id = tierras_target_id
-			plot = False	
-		else:
-			target = 'Gaia DR3 '+str(common_source_ids[tt])
-			target_gaia_id = identify_target_gaia_id(target)
-			plot = False 
+	for i in range(n_dfs):
+		print(f'Creating ALC-corrected light curves, photometry file {i+1} of {n_dfs}')
+		W = weights_arr[:, i]
+		F = flux[i]
+		F_err = flux_err[i]
+
+		# per-exposure vailidity mask 
+		valid = ~(np.isnan(F) | np.isnan(F_err))
+		F_safe     = np.where(valid, F,     0.0)
+		F_err_safe = np.where(valid, F_err, 0.0)
+
+		# W_valid[t, k] = W[k] if source k is valid at exposure t, else 0
+		W_valid = np.where(valid, W[None, :], 0.0)
+
+		S = W_valid.sum(axis=1, keepdims=True)
+		safe_S = np.where(S > 1e-10, S, np.nan)
+
+		ws_F      = (F_safe      * W_valid    ).sum(axis=1, keepdims=True)
+		ws_Ferrsq = (F_err_safe**2 * W_valid**2).sum(axis=1, keepdims=True)
+
+		# Renormalised base ALC and variance
+		# alc_base        = (ws_F      / safe_S     )[:, 0]  # (n_ims,)
+		# alc_err_sq_base = (ws_Ferrsq / safe_S**2  )[:, 0]
+
+		# ── Rank-1 leave-one-out (reference sources only) ────────────────────
+    # 	w_self[t,k] = valid weight of source k at time t, zero for non-refs
+		w_self = W_valid * in_refs[None, :]               # (n_ims, n_sources)
+
+		denom_loo  = safe_S - w_self # (n_ims, n_sources)
+		safe_denom = np.where(denom_loo > 1e-10, denom_loo, np.nan)
+
+		alc_all     = (ws_F      - F_safe      * w_self    ) / safe_denom
+		alc_err_sq  = (ws_Ferrsq - F_err_safe**2 * w_self**2) / safe_denom**2
+		alc_err_all = np.sqrt(np.maximum(alc_err_sq, 0.0))
+
+		# ── rest of loop unchanged ────────────────────────────────────────────
+		sat     = saturated_flags[i].astype(bool)
+		F_m     = np.where(sat, np.nan, F)
+		F_err_m = np.where(sat, np.nan, F_err)
+
+		# alc_base = F @ W
+		# alc_err_sq_base = (F_err**2) @ (W**2)
+
+		# w_self = W * in_refs
+		# denom = 1.0 - w_self 
+		# alc_all = (alc_base[:, None] - F * w_self) / denom
+		# alc_err_sq  = (alc_err_sq_base[:, None] - F_err**2 * w_self**2) / denom**2
+		# alc_err_all = np.sqrt(np.maximum(alc_err_sq, 0.0))
 		
-		print(f'Doing {target}, source {tt+1} of {len(common_source_ids)}.')
+		# # mask saturated frames 
+		# sat       = saturated_flags[i].astype(bool)
+		# F_m       = np.where(sat, np.nan, F)
+		# F_err_m   = np.where(sat, np.nan, F_err)
 
-		med_stddevs = np.zeros(n_dfs)
-		med_stddevs_2 = np.zeros(n_dfs)
-		best_med_stddev = 9999999.
-		# mearth_style_times = np.zeros(n_dfs)
-		best_corr_flux = None
-		flux_corr_save = np.zeros((n_dfs, len(times)))
-		# CAN WE REPLACE THIS LOOP WITH MATRIX MULTIPLICATION?
-		for i in range(n_dfs):
-			# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
-			if target_gaia_id in ref_gaia_ids:
-				if i == 0:
-					weight_ind = np.where(ref_gaia_ids == target_gaia_id)[0][0]
-				weights = copy.deepcopy(weights_arr[:,i])
-				weights[weight_ind] = 0
-				weights /= np.nansum(weights)
-			else:
-				weights = copy.deepcopy(weights_arr[:,i])
+		corr_flux     = F_m / alc_all
+		corr_flux_err = np.sqrt((F_err_m / alc_all)**2 + (F_m * alc_err_all / alc_all**2)**2)
 
-			# cut to weights that are not 0 for efficiency (also adjust ref_inds to reflect this)	
-			non_zero_weight_inds = np.where(weights != 0)[0]
-			ref_inds_loop = np.array([ref_inds[i] for i in non_zero_weight_inds if i in ref_inds]) 
-			
-			weights = weights[ref_inds_loop]
+		norms = np.nanmedian(corr_flux, axis=0) 
+		norms = np.where(norms == 0, 1.0, norms)
+		corr_flux     /= norms
+		corr_flux_err /= norms
 
-			# # do we need to add scintillation noise in quadrature BEFORE doing the ALC weighting?
-			# n_refs = len(np.where(weights != 0)[0])
-			# sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
+		# ── Scintillation noise ───────────────────────────────────────────────
+		n_nz       = np.sum(W > 0)
+		n_refs_arr = np.where(in_refs & (W > 0), n_nz - 1, n_nz).astype(float)
+		sigma_scint = (1.5 * sigma_s[:, None] * np.sqrt(1.0 + 1.0 / np.maximum(n_refs_arr, 1.0)))
+		corr_flux_err = np.sqrt(corr_flux_err**2 + sigma_scint**2)
 
-			# norms = np.nanmedian(flux[i], axis=0)
-			# flux_err_norm = flux_err[i,:] / norms
-			# flux_err_scaled = np.sqrt(flux_err_norm**2 + sigma_scint[:,np.newaxis]**2) * norms
-			# flux_err[i,] = flux_err_scaled
-				
-			mask_ = np.zeros(len(flux[i][:,tt]), dtype='int') 
-			mask_[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
-			if sum(mask_) == len(mask_):
-				print(f'All exposures saturated for {target_gaia_id}, skipping!')
-				break
+		# ── Sigma-clip and scatter metric for ALL sources at once ─────────────
+		corr_flux_sc  = sigma_clip(corr_flux, sigma=3, axis=0).data   # (n_ims, n_sources)
+		norms_sc      = np.nanmedian(corr_flux_sc, axis=0)
+		corr_flux_sc /= np.where(norms_sc == 0, 1.0, norms_sc)
 
-			# use the weights calculated in mearth_style to create the ALC 
-			alc = np.matmul(flux[i][:,ref_inds_loop], weights)
-			alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds_loop]**2, weights**2))
+		stddevs = np.nanstd(corr_flux_sc[mask_inv], axis=0) 
+		if transit_mask is not None and target_idx is not None:
+			stddevs[target_idx] = np.nanstd(corr_flux_sc[:, target_idx][mask_inv & transit_mask])
 
-			# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
-			target_flux = copy.deepcopy(flux[i][:,tt])
-			target_flux_err = copy.deepcopy(flux_err[i][:,tt])
-			target_flux[mask_] = np.nan
-			target_flux_err[mask_] = np.nan
-			corr_flux = target_flux / alc
-			rel_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
-				
-			# normalize
-			norm = np.nanmedian(corr_flux)
-			corr_flux /= norm 
-			rel_flux_err /= norm
+		# ── Update best-aperture results ──────────────────────────────────────
+		improved    = stddevs < best_std
+		best_std    = np.where(improved, stddevs, best_std)
+		best_ap_idx = np.where(improved, i, best_ap_idx)
 
-			# OLD METHOD: inflate error by scintillation estimate (see Stefansson et al. 2017) AFTER ALC CORRECTION. UNCOMMENT TO REVERT TO WHAT WAS WORKING BEFORE 2/25/26
-			n_refs = len(np.where(weights != 0)[0])
-			sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
-			corr_flux_err = np.sqrt(rel_flux_err**2 + sigma_scint**2)
+		m = improved[None, :]                              # broadcast over time axis
+		best_corr_flux     = np.where(m, corr_flux    .astype('float32'), best_corr_flux)
+		best_corr_flux_err = np.where(m, corr_flux_err.astype('float32'), best_corr_flux_err)
+		best_raw_flux      = np.where(m, F_m          .astype('float32'), best_raw_flux)
+		best_raw_flux_err  = np.where(m, F_err_m      .astype('float32'), best_raw_flux_err)
+		best_alc           = np.where(m, alc_all      .astype('float32'), best_alc)
+		best_alc_err       = np.where(m, alc_err_all  .astype('float32'), best_alc_err)
 
-			# corr_flux_err = rel_flux_err # NEW METHOD: since the scintillation is already included, just copy rel_flux_err
+	# breakpoint() 
+	# ── Write one CSV per source (unchanged logic) ────────────────────────────────
+	for tt in range(n_sources):
+		source_name = field if common_source_ids[tt] == tierras_target_id \
+					else f'Gaia DR3 {common_source_ids[tt]}'
+		best_i = best_ap_idx[tt]
+		best_phot_style = (phot_files[df_ind] if ap_rad is not None else phot_files[best_i]
+						).split(f'{field}_')[1].split('.csv')[0]
 
-			# sigma clip
-			corr_flux_sc = sigma_clip(corr_flux).data
-			norm = np.nanmedian(corr_flux_sc)
-			corr_flux_sc /= norm 
+		out_file = output_path / f'{source_name}_global_lc.csv'
+		if out_file.exists():
+			out_file.unlink()
 
-			# # Evaluate the median standard deviation over 5-minute intervals 
-			# stddevs = np.zeros(len(bin_inds))
-			# for k in range(len(bin_inds)):
-			# 	stddevs[k] = np.nanstd(corr_flux_sc[bin_inds[k]])
-			
-			# med_stddevs[i] = np.nanmedian(stddevs)	
+		output_dict = {
+			'BJD TDB':                times + x_offset,
+			'Flux':                   best_corr_flux[:, tt],
+			'Flux Error':             best_corr_flux_err[:, tt],
+			'Raw Flux (ADU)':         best_raw_flux[:, tt],
+			'Raw Flux Error (ADU)':   best_raw_flux_err[:, tt],
+			'ALC':                    best_alc[:, tt],
+			'ALC Error':              best_alc_err[:, tt],
+			'Sky Background (ADU/s)': sky[:, tt] / exposure_times,
+			'X': x[:, tt],  'Y': y[:, tt],
+			'WCS Flag':      wcs_flags.astype(int),
+			'Position Flag': pos_mask,
+			'FWHM Flag':     fwhm_mask,
+			'Flux Flag':     flux_mask,
+			'Saturated Flag':    saturated_flags[best_i, :, tt].astype(int),
+			'Non-Linear Flag':   non_linear_flags[best_i, :, tt].astype(int),
+		}
+		with open(out_file, 'a') as fh:
+			fh.write(f'# this light curve was made using {best_phot_style}\n')
+			pd.DataFrame(output_dict).to_csv(fh, index=False, na_rep=np.nan)
+		set_tierras_permissions(out_file)
 
-			# evaluate sigma_n2n (stddev of nightly medians)
-			medians = np.zeros(len(bin_inds))
+	gc.collect()
 	
-			# if a transit mask has been created, exclude those exposures from the stddev calculation 
-			if target == field and transit_mask is not None:
-				# for k in range(len(bin_inds)):
-				# 	medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]][mask_inv[bin_inds[k] & transit_mask[bin_inds[k]]]])
-
-				med_stddevs_2[i] = np.nanstd(corr_flux_sc[mask_inv & transit_mask])
-			else:
-				# for k in range(len(bin_inds)):
-				# 	medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]][mask_inv[bin_inds[k]]])
-				med_stddevs_2[i] = np.nanstd(corr_flux_sc[mask_inv])
-			
-			# med_stddevs[i] = np.nanstd(medians)
-
-			flux_corr_save[i] = corr_flux
-			# if this light curve is better than the previous ones, store it for later
-			if med_stddevs_2[i] < best_med_stddev:
-				best_med_stddev = med_stddevs_2[i]
-				best_phot_file = i 
-				best_corr_flux = corr_flux
-				best_corr_flux_err = corr_flux_err
-				best_raw_flux = target_flux
-				best_raw_flux_err = target_flux_err
-				best_alc = alc
-				best_alc_err = alc_err
-
-		# if best_corr_flux is None: 
-		# 	breakpoint()
-		# if common_source_ids[tt] == tierras_target_id:
-		# 	breakpoint()
-
-		# if best_corr_flux is not None:
-
-		if best_corr_flux is None: 
-			best_med_stddev = np.nan 
-			best_phot_file = 0 # doesn't matter what this is set to
-			best_corr_flux = np.zeros(len(times)) + np.nan 
-			best_corr_flux_err = np.zeros_like(best_corr_flux) + np.nan 
-			best_raw_flux = np.zeros_like(best_corr_flux) + np.nan 
-			best_raw_flux_err = np.zeros_like(best_corr_flux) + np.nan 
-			best_alc = np.zeros_like(best_corr_flux) + np.nan 
-			best_alc_err = np.zeros_like(best_corr_flux) + np.nan 
-			
-
-		# write out the best light curve 
-		output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask, 'Saturated Flag':saturated_flags[best_phot_file,:,tt].astype(int), 'Non-Linear Flag':non_linear_flags[best_phot_file,:,tt].astype(int)}
+	# for tt in range(len(common_source_ids)):
+	# 	tloop = time.time()
+	# 	if common_source_ids[tt] == tierras_target_id:
+	# 		target = field
+	# 		target_gaia_id = tierras_target_id
+	# 		plot = False	
+	# 	else:
+	# 		target = 'Gaia DR3 '+str(common_source_ids[tt])
+	# 		target_gaia_id = identify_target_gaia_id(target)
+	# 		plot = False 
 		
-		if ap_rad is not None:
-			best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
-		else:
-			best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
+	# 	print(f'Doing {target}, source {tt+1} of {len(common_source_ids)}.')
 
-		if os.path.exists(output_path/f'{target}_global_lc.csv'):
-			os.remove(output_path/f'{target}_global_lc.csv')
+	# 	med_stddevs = np.zeros(n_dfs)
+	# 	med_stddevs_2 = np.zeros(n_dfs)
+	# 	best_med_stddev = 9999999.
+	# 	# mearth_style_times = np.zeros(n_dfs)
+	# 	best_corr_flux = None
+	# 	flux_corr_save = np.zeros((n_dfs, len(times)))
+	# 	# CAN WE REPLACE THIS LOOP WITH MATRIX MULTIPLICATION?
+	# 	for i in range(n_dfs):
+	# 		# if the target is one of the reference stars, set its ALC weight to zero and re-weight all the other stars
+	# 		if target_gaia_id in ref_gaia_ids:
+	# 			if i == 0:
+	# 				weight_ind = np.where(ref_gaia_ids == target_gaia_id)[0][0]
+	# 			weights = copy.deepcopy(weights_arr[:,i])
+	# 			weights[weight_ind] = 0
+	# 			weights /= np.nansum(weights)
+	# 		else:
+	# 			weights = copy.deepcopy(weights_arr[:,i])
+
+	# 		# cut to weights that are not 0 for efficiency (also adjust ref_inds to reflect this)	
+	# 		non_zero_weight_inds = np.where(weights != 0)[0]
+	# 		ref_inds_loop = np.array([ref_inds[i] for i in non_zero_weight_inds if i in ref_inds]) 
+			
+	# 		weights = weights[ref_inds_loop]
+
+	# 		# # do we need to add scintillation noise in quadrature BEFORE doing the ALC weighting?
+	# 		# n_refs = len(np.where(weights != 0)[0])
+	# 		# sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
+
+	# 		# norms = np.nanmedian(flux[i], axis=0)
+	# 		# flux_err_norm = flux_err[i,:] / norms
+	# 		# flux_err_scaled = np.sqrt(flux_err_norm**2 + sigma_scint[:,np.newaxis]**2) * norms
+	# 		# flux_err[i,] = flux_err_scaled
+				
+	# 		mask_ = np.zeros(len(flux[i][:,tt]), dtype='int') 
+	# 		mask_[np.where(saturated_flags[i][:,tt])] = True # mask out any saturated exposures for this source
+	# 		if sum(mask_) == len(mask_):
+	# 			print(f'All exposures saturated for {target_gaia_id}, skipping!')
+	# 			break
+
+	# 		# use the weights calculated in mearth_style to create the ALC 
+	# 		alc = np.matmul(flux[i][:,ref_inds_loop], weights)
+	# 		alc_err = np.sqrt(np.matmul(flux_err[i][:,ref_inds_loop]**2, weights**2))
+
+	# 		# correct the target flux by the ALC and incorporate the ALC error into the corrected flux error
+	# 		target_flux = copy.deepcopy(flux[i][:,tt])
+	# 		target_flux_err = copy.deepcopy(flux_err[i][:,tt])
+	# 		target_flux[mask_] = np.nan
+	# 		target_flux_err[mask_] = np.nan
+	# 		corr_flux = target_flux / alc
+	# 		rel_flux_err = np.sqrt((target_flux_err/alc)**2 + (target_flux*alc_err/(alc**2))**2)
+				
+	# 		# normalize
+	# 		norm = np.nanmedian(corr_flux)
+	# 		corr_flux /= norm 
+	# 		rel_flux_err /= norm
+
+	# 		# OLD METHOD: inflate error by scintillation estimate (see Stefansson et al. 2017) AFTER ALC CORRECTION. UNCOMMENT TO REVERT TO WHAT WAS WORKING BEFORE 2/25/26
+	# 		n_refs = len(np.where(weights != 0)[0])
+	# 		sigma_scint = 1.5*sigma_s*np.sqrt(1 + 1/(n_refs))
+	# 		corr_flux_err = np.sqrt(rel_flux_err**2 + sigma_scint**2)
+
+	# 		# corr_flux_err = rel_flux_err # NEW METHOD: since the scintillation is already included, just copy rel_flux_err
+
+	# 		# sigma clip
+	# 		corr_flux_sc = sigma_clip(corr_flux).data
+	# 		norm = np.nanmedian(corr_flux_sc)
+	# 		corr_flux_sc /= norm 
+
+	# 		# # Evaluate the median standard deviation over 5-minute intervals 
+	# 		# stddevs = np.zeros(len(bin_inds))
+	# 		# for k in range(len(bin_inds)):
+	# 		# 	stddevs[k] = np.nanstd(corr_flux_sc[bin_inds[k]])
+			
+	# 		# med_stddevs[i] = np.nanmedian(stddevs)	
+
+	# 		# evaluate sigma_n2n (stddev of nightly medians)
+	# 		medians = np.zeros(len(bin_inds))
+	
+	# 		# if a transit mask has been created, exclude those exposures from the stddev calculation 
+	# 		if target == field and transit_mask is not None:
+	# 			# for k in range(len(bin_inds)):
+	# 			# 	medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]][mask_inv[bin_inds[k] & transit_mask[bin_inds[k]]]])
+
+	# 			med_stddevs_2[i] = np.nanstd(corr_flux_sc[mask_inv & transit_mask])
+	# 		else:
+	# 			# for k in range(len(bin_inds)):
+	# 			# 	medians[k] = np.nanmedian(corr_flux_sc[bin_inds[k]][mask_inv[bin_inds[k]]])
+	# 			med_stddevs_2[i] = np.nanstd(corr_flux_sc[mask_inv])
+			
+	# 		# med_stddevs[i] = np.nanstd(medians)
+
+	# 		flux_corr_save[i] = corr_flux
+	# 		# if this light curve is better than the previous ones, store it for later
+	# 		if med_stddevs_2[i] < best_med_stddev:
+	# 			best_med_stddev = med_stddevs_2[i]
+	# 			best_phot_file = i 
+	# 			best_corr_flux = corr_flux
+	# 			best_corr_flux_err = corr_flux_err
+	# 			best_raw_flux = target_flux
+	# 			best_raw_flux_err = target_flux_err
+	# 			best_alc = alc
+	# 			best_alc_err = alc_err
+
+	# 	# if best_corr_flux is None: 
+	# 	# 	breakpoint()
+	# 	# if common_source_ids[tt] == tierras_target_id:
+	# 	# 	breakpoint()
+
+	# 	# if best_corr_flux is not None:
+
+	# 	if best_corr_flux is None: 
+	# 		best_med_stddev = np.nan 
+	# 		best_phot_file = 0 # doesn't matter what this is set to
+	# 		best_corr_flux = np.zeros(len(times)) + np.nan 
+	# 		best_corr_flux_err = np.zeros_like(best_corr_flux) + np.nan 
+	# 		best_raw_flux = np.zeros_like(best_corr_flux) + np.nan 
+	# 		best_raw_flux_err = np.zeros_like(best_corr_flux) + np.nan 
+	# 		best_alc = np.zeros_like(best_corr_flux) + np.nan 
+	# 		best_alc_err = np.zeros_like(best_corr_flux) + np.nan 
+			
+
+	# 	# write out the best light curve 
+	# 	output_dict = {'BJD TDB':times+x_offset, 'Flux':best_corr_flux, 'Flux Error':best_corr_flux_err, 'Raw Flux (ADU)':best_raw_flux, 'Raw Flux Error (ADU)':best_raw_flux_err, 'ALC':best_alc, 'ALC Error':best_alc_err, 'Sky Background (ADU/s)': sky[:,tt]/exposure_times, 'X':x[:,tt], 'Y':y[:,tt], 'WCS Flag':wcs_flags.astype(int), 'Position Flag':pos_mask, 'FWHM Flag':fwhm_mask, 'Flux Flag':flux_mask, 'Saturated Flag':saturated_flags[best_phot_file,:,tt].astype(int), 'Non-Linear Flag':non_linear_flags[best_phot_file,:,tt].astype(int)}
 		
-		filename = open(output_path/f'{target}_global_lc.csv', 'a')
-		filename.write(f'# this light curve was made using {best_phot_style}\n' )
-		output_df = pd.DataFrame(output_dict)
-		output_df.to_csv(filename, index=0, na_rep=np.nan)
-		filename.close()
-		set_tierras_permissions(output_path/f'{target}_global_lc.csv')
+	# 	if ap_rad is not None:
+	# 		best_phot_style = phot_files[df_ind].split(f'{field}_')[1].split('.csv')[0]
+	# 	else:
+	# 		best_phot_style = phot_files[best_phot_file].split(f'{field}_')[1].split('.csv')[0]
 
-		gc.collect() # do garbage collection to prevent memory leaks 
-		print(f'tloop: {time.time()-tloop:.1f}')
-		# avg_mearth_times[tt] = np.mean(mearth_style_times)
-		# print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
+	# 	if os.path.exists(output_path/f'{target}_global_lc.csv'):
+	# 		os.remove(output_path/f'{target}_global_lc.csv')
+		
+	# 	filename = open(output_path/f'{target}_global_lc.csv', 'a')
+	# 	filename.write(f'# this light curve was made using {best_phot_style}\n' )
+	# 	output_df = pd.DataFrame(output_dict)
+	# 	output_df.to_csv(filename, index=0, na_rep=np.nan)
+	# 	filename.close()
+	# 	set_tierras_permissions(output_path/f'{target}_global_lc.csv')
+
+	# 	gc.collect() # do garbage collection to prevent memory leaks 
+	# 	print(f'tloop: {time.time()-tloop:.1f}')
+	# 	# avg_mearth_times[tt] = np.mean(mearth_style_times)
+	# 	# print(f'avg mearth_style time: {np.mean(avg_mearth_times[0:tt+1]):.2f}')
 		
 if __name__ == '__main__':
 	main()
