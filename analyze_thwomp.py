@@ -11,6 +11,8 @@ from pathlib import Path
 from scipy.interpolate import CubicSpline
 from astropy.io import fits
 import pyarrow.parquet as pq
+import matplotlib.pyplot as plt 
+plt.ion()
 
 from analyze_global import identify_target_gaia_id
 from ap_phot import set_tierras_permissions, t_or_f, tierras_binner
@@ -28,8 +30,6 @@ def main(raw_args=None):
                     help='Min cumulative exposure time per night (hours).')
     ap.add_argument('-ap_rad', required=False, default=None, type=float,
                     help='Fix aperture radius (pixels). If None, auto-select by 5-min scatter.')
-    ap.add_argument('-rp_bright_limit', required=False, default=13.0, type=float,
-                    help='G_RP limit for non-target sources to receive light curves.')
     ap.add_argument('-force_reweight', required=False, default='False',
                     help='Reserved for future use.')
     args = ap.parse_args(raw_args)
@@ -38,7 +38,6 @@ def main(raw_args=None):
     ffname = args.ffname
     minimum_night_duration = args.minimum_night_duration
     ap_rad = args.ap_rad
-    rp_bright_limit = args.rp_bright_limit
 
     fpath = '/data/tierras/flattened/'
     ref_field = f'{field}_ref'
@@ -61,7 +60,7 @@ def main(raw_args=None):
 
     dates = np.array([p.split('/')[4] for p in date_list])
     print(f'Found {len(dates)} nights for {field}: {list(dates)}')
-
+ 
     if len(date_list) == 0:
         raise RuntimeError(f'No photometry found for {field} under ffname={ffname}. '
                            f'Check that data exists at /data/tierras/photometry/**/{field}/{ffname}')
@@ -85,7 +84,8 @@ def main(raw_args=None):
         id_to_idx = {sid: idx for idx, sid in enumerate(df['source_id'])}
         source_inds.append([id_to_idx[sid] for sid in common_source_ids if sid in id_to_idx])
 
-    n_sources = len(common_source_ids)
+    common_source_ids = common_source_ids[0] # restrict to just analyze the target
+    n_sources = 1 
     print(f'{n_sources} sources common across all nights.')
 
     # ── 3. Count total images and determine aperture file list ─────────────────
@@ -121,16 +121,10 @@ def main(raw_args=None):
         field, source_dfs[-1], x_pix=targ_x_pix, y_pix=targ_y_pix)
     print(f'Target Gaia ID: {tierras_target_id}')
 
-    # ── 5. Select sources for output (target + G_RP < rp_bright_limit) ────────
-    # Build common_rp via O(n) merge rather than O(n²) per-source lookup
-    rp_lookup = source_dfs[0].set_index('source_id')['phot_rp_mean_mag']
-    common_rp = np.array(rp_lookup.reindex(common_source_ids))
+    # ── 5. Select sources for output (target only) ────────────────────────────
     targ_common_idx = np.where(common_source_ids == tierras_target_id)[0][0]
-    output_source_inds = np.where(
-        (common_rp < rp_bright_limit) | (common_source_ids == tierras_target_id)
-    )[0]
-    print(f'Will produce light curves for {len(output_source_inds)} sources '
-          f'(target + G_RP < {rp_bright_limit}).')
+    output_source_inds = np.array([targ_common_idx])
+    print(f'Will produce light curve for target (Gaia ID {tierras_target_id}).')
 
     # ── 6. Allocate target photometry arrays ───────────────────────────────────
     ancillary_cols = ['Filename', 'BJD TDB', 'Airmass', 'Exposure Time',
@@ -211,6 +205,7 @@ def main(raw_args=None):
     print(f'Target read-in: {time.time()-t1:.1f}s')
     print(f'times[0]={times[0]:.6f}, times[-1]={times[-1]:.6f}, '
           f'flux[0,0,0]={flux[0,0,0]:.1f}')
+    
     # ── 7. Read reference field photometry ─────────────────────────────────────
     ref_date_list = glob(f'/data/tierras/photometry/**/{ref_field}/{ffname}')
     ref_date_list = np.array(sorted(ref_date_list, key=lambda x: int(x.split('/')[4])))
@@ -258,10 +253,14 @@ def main(raw_args=None):
         if pf:
             n_ims_ref += len(pq.read_table(pf[0]))
 
-    ref_first_phot = sorted(
-        [f for f in glob(ref_date_list[0] + '/**phot**.parquet') if 'variable' not in f],
-        key=lambda x: float(x.split('_')[-1].split('.parquet')[0])
-    )
+    REF_AP_RAD = 14.0
+    ref_first_phot = [
+        f for f in glob(ref_date_list[0] + '/**phot**.parquet')
+        if 'variable' not in f
+        and float(f.split('_')[-1].split('.parquet')[0]) == REF_AP_RAD
+    ]
+    if not ref_first_phot:
+        raise RuntimeError(f'No ref phot file found for ap_rad={REF_AP_RAD} in {ref_date_list[0]}.')
     n_dfs_ref = len(ref_first_phot)
 
     # allocate
@@ -274,10 +273,11 @@ def main(raw_args=None):
     t2 = time.time()
     for i, path in enumerate(ref_date_list):
         print(f'Reading ref photometry from {ref_dates[i]} ({i+1}/{len(ref_date_list)}).')
-        ref_phot_files = sorted(
-            [f for f in glob(path + '/**phot**.parquet') if 'variable' not in f],
-            key=lambda x: float(x.split('_')[-1].split('.parquet')[0])
-        )
+        ref_phot_files = [
+            f for f in glob(path + '/**phot**.parquet')
+            if 'variable' not in f
+            and float(f.split('_')[-1].split('.parquet')[0]) == REF_AP_RAD
+        ]
         if not ref_phot_files:
             continue
 
@@ -330,95 +330,85 @@ def main(raw_args=None):
     # ── 10. Build per-aperture, per-night interpolated ALC ─────────────────────
     EXTRAP_WARN_MIN = 5.0   # minutes; warn if target falls this far outside ref bounds
 
-    # alc_interp_all[j, t] = interpolated ALC value for aperture j at target time t
-    alc_interp_all     = np.full((n_dfs_ref, n_ims), np.nan, dtype='float64')
-    alc_err_interp_all = np.full_like(alc_interp_all, np.nan)
+    alc_interp_all     = np.full(n_ims, np.nan, dtype='float64')
+    alc_err_interp_all = np.full(n_ims, np.nan, dtype='float64')
 
-    for j in range(n_dfs_ref):
-        ap_col = ref_first_phot[j].split('_')[-1].split('.parquet')[0]  # e.g. '10.0'
-        if ap_col not in weights_df.columns:
-            print(f'Aperture {ap_col} not in weights CSV; skipping.')
+    ap_col = ref_first_phot[0].split('_')[-1].split('.parquet')[0]
+    if ap_col not in weights_df.columns:
+        raise RuntimeError(f'Aperture {ap_col} not in weights CSV.')
+    weights_j = np.array(weights_df[ap_col])
+
+    weight_map = {rid: w for rid, w in zip(weight_ref_ids, weights_j)}
+    weights_ordered = np.array([weight_map.get(sid, 0.0) for sid in common_source_ids_ref])
+
+    missing_weighted = [
+        rid for rid, w in zip(weight_ref_ids, weights_j)
+        if w > 0 and rid not in set(common_source_ids_ref)
+    ]
+    if missing_weighted:
+        warnings.warn(
+            f'Aperture {ap_col}: {len(missing_weighted)} source(s) with non-zero weight '
+            f'in weights.csv are absent from common_source_ids_ref and will be excluded '
+            f'from the ALC. Their total weight was '
+            f'{sum(weights_j[list(weight_ref_ids).index(r)] for r in missing_weighted):.4f}.'
+        )
+
+    for n_idx in range(len(dates)):
+        night_date = dates[n_idx]
+
+        ref_night_match = [ri for ri, rd in enumerate(ref_dates) if rd == night_date]
+        if not ref_night_match:
+            warnings.warn(f'{night_date}: no ref data; skipping night in THWOMP correction.')
             continue
-        weights_j = np.array(weights_df[ap_col])
+        ri = ref_night_match[0]
 
-        # build ordered weight vector aligned to common_source_ids_ref
-        weight_map = {rid: w for rid, w in zip(weight_ref_ids, weights_j)}
-        weights_ordered = np.array([weight_map.get(sid, 0.0)
-                                    for sid in common_source_ids_ref])
+        t_night = times_list[n_idx]
+        t_ref_night = times_list_ref[ri]
 
-        # warn if any star with non-zero weight is absent from the common ref source list
-        missing_weighted = [
-            rid for rid, w in zip(weight_ref_ids, weights_j)
-            if w > 0 and rid not in set(common_source_ids_ref)
-        ]
-        if missing_weighted:
-            warnings.warn(
-                f'Aperture {ap_col}: {len(missing_weighted)} source(s) with non-zero weight '
-                f'in weights.csv are absent from common_source_ids_ref and will be excluded '
-                f'from the ALC. Their total weight was '
-                f'{sum(weights_j[list(weight_ref_ids).index(r)] for r in missing_weighted):.4f}.'
-            )
+        targ_inds = np.where((times >= t_night[0]) & (times <= t_night[-1]))[0]
+        ref_inds  = np.where(
+            (times_ref >= t_ref_night[0]) & (times_ref <= t_ref_night[-1])
+        )[0]
 
-        for n_idx in range(len(dates)):
-            night_date = dates[n_idx]
+        if len(ref_inds) < 2:
+            warnings.warn(f'{night_date}: fewer than 2 ref exposures; cannot interpolate.')
+            continue
 
-            # locate matching ref night by date
-            ref_night_match = [ri for ri, rd in enumerate(ref_dates) if rd == night_date]
-            if not ref_night_match:
-                warnings.warn(f'{night_date}: no ref data; skipping night in THWOMP correction.')
-                continue
-            ri = ref_night_match[0]
+        alc_raw     = flux_ref[0, ref_inds, :] @ weights_ordered
+        alc_err_raw = np.sqrt((flux_err_ref[0, ref_inds, :]**2) @ (weights_ordered**2))
 
-            # index arrays for this target night and ref night
-            t_night = times_list[n_idx]       # view: already offset-subtracted
-            t_ref_night = times_list_ref[ri]  # view: already offset-subtracted
+        valid = ~np.isnan(alc_raw)
+        if np.sum(valid) < 2:
+            warnings.warn(f'{night_date}: fewer than 2 non-NaN ALC points; skipping.')
+            continue
 
-            targ_inds = np.where((times >= t_night[0]) & (times <= t_night[-1]))[0]
-            ref_inds  = np.where(
-                (times_ref >= t_ref_night[0]) & (times_ref <= t_ref_night[-1])
-            )[0]
+        t_ref_v = times_ref[ref_inds][valid]
+        alc_v   = alc_raw[valid]
+        alc_e_v = alc_err_raw[valid]
 
-            if len(ref_inds) < 2:
-                warnings.warn(f'{night_date}: fewer than 2 ref exposures; cannot interpolate.')
-                continue
+        t_targ   = times[targ_inds]
+        leading  = t_targ[t_targ < t_ref_v[0]]
+        trailing = t_targ[t_targ > t_ref_v[-1]]
 
-            # build raw ALC
-            alc_raw     = flux_ref[j, ref_inds, :] @ weights_ordered
-            alc_err_raw = np.sqrt((flux_err_ref[j, ref_inds, :]**2) @ (weights_ordered**2))
+        if len(leading):
+            gap_min = (t_ref_v[0] - leading.min()) * 24 * 60
+            if gap_min > EXTRAP_WARN_MIN:
+                warnings.warn(
+                    f'{night_date} ap={ap_col}: {len(leading)} target exposures '
+                    f'extrapolated up to {gap_min:.1f} min before first ref.')
+        if len(trailing):
+            gap_min = (trailing.max() - t_ref_v[-1]) * 24 * 60
+            if gap_min > EXTRAP_WARN_MIN:
+                warnings.warn(
+                    f'{night_date} ap={ap_col}: {len(trailing)} target exposures '
+                    f'extrapolated up to {gap_min:.1f} min after last ref.')
 
-            valid = ~np.isnan(alc_raw)
-            if np.sum(valid) < 2:
-                warnings.warn(f'{night_date}: fewer than 2 non-NaN ALC points; skipping.')
-                continue
-
-            t_ref_v  = times_ref[ref_inds][valid]
-            alc_v    = alc_raw[valid]
-            alc_e_v  = alc_err_raw[valid]
-
-            # extrapolation warnings (times in days; convert gap to minutes)
-            t_targ = times[targ_inds]
-            leading  = t_targ[t_targ < t_ref_v[0]]
-            trailing = t_targ[t_targ > t_ref_v[-1]]
-            if len(leading):
-                gap_min = (t_ref_v[0] - leading.min()) * 24 * 60
-                if gap_min > EXTRAP_WARN_MIN:
-                    warnings.warn(
-                        f'{night_date} ap={ap_col}: {len(leading)} target exposures '
-                        f'extrapolated up to {gap_min:.1f} min before first ref.')
-            if len(trailing):
-                gap_min = (trailing.max() - t_ref_v[-1]) * 24 * 60
-                if gap_min > EXTRAP_WARN_MIN:
-                    warnings.warn(
-                        f'{night_date} ap={ap_col}: {len(trailing)} target exposures '
-                        f'extrapolated up to {gap_min:.1f} min after last ref.')
-
-            cs = CubicSpline(t_ref_v, alc_v, extrapolate=True)
-            alc_interp_all[j, targ_inds]     = cs(t_targ)
-            alc_err_interp_all[j, targ_inds] = np.median(alc_e_v)
+        cs = CubicSpline(t_ref_v, alc_v, extrapolate=True)
+        alc_interp_all[targ_inds]     = cs(t_targ)
+        alc_err_interp_all[targ_inds] = np.median(alc_e_v)
 
     print('ALC interpolation done.')
-    print(f'alc_interp_all[0, non-nan count]: '
-          f'{np.sum(~np.isnan(alc_interp_all[0]))} of {n_ims}')
+    print(f'ALC non-nan count: {np.sum(~np.isnan(alc_interp_all))} of {n_ims}')
     # ── 11. Quality masks (mirrors analyze_global logic) ───────────────────────
     x_deviations = np.median(x_pos - np.nanmedian(x_pos, axis=0), axis=1)
     y_deviations = np.median(y_pos - np.nanmedian(y_pos, axis=0), axis=1)
@@ -436,7 +426,7 @@ def main(raw_args=None):
     fwhm_mask_arr[np.where(fwhm_x > 4)[0]] = 1
 
     short_night_mask = np.zeros(n_ims, dtype='bool')
-    quality_mask = (wcs_flags == 1) | (pos_mask == 1) | (fwhm_mask_arr == 1) | (flux_mask == 1)
+    quality_mask = (wcs_flags == 1) | (pos_mask == 1) | (flux_mask == 1)
 
     # ── 12. Drop nights below minimum_night_duration ───────────────────────────
     dates_to_remove = []
@@ -457,8 +447,7 @@ def main(raw_args=None):
     print(f'Quality mask: {np.sum(mask_inv)}/{n_ims} exposures pass.')
 
     # ── 13. Scintillation noise (base term; per-aperture n_refs applied in loop) ──
-    sigma_s = (0.09 * 130**(-2/3) * airmasses**(7/4)
-               * (2 * exposure_times)**(-1/2) * np.exp(-2306 / 8000))
+    sigma_s = (0.09 * 130**(-2/3) * airmasses**(7/4) * (2 * exposure_times)**(-1/2) * np.exp(-2306 / 8000))
 
     # ── 14. Aperture loop — ALC correction and scatter minimisation ─────────────
     best_std          = np.inf
@@ -472,31 +461,16 @@ def main(raw_args=None):
     best_sat_flags     = None
     best_nl_flags      = None
 
-    # iterate only over apertures present in both phot_files_template and alc_interp_all
-    n_ap_loop = n_dfs_ref if ap_rad is None else 1
-
-    for j in range(n_ap_loop):
+    for j in range(n_dfs):
         if ap_rad is not None:
-            # map requested ap_rad to index in target phot files
-            target_radii = np.array([
-                float(f.split('_')[-1].split('.parquet')[0])
-                for f in first_phot_files
-            ])
-            j_targ = int(np.where(target_radii == ap_rad)[0][0])
+            j_targ = 0
             ap_label = str(ap_rad)
         else:
-            ap_label = ref_first_phot[j].split('_')[-1].split('.parquet')[0]
-            # find matching aperture index in target phot files
-            target_radii = np.array([
-                float(f.split('_')[-1].split('.parquet')[0])
-                for f in first_phot_files
-            ])
-            j_targ = int(np.where(target_radii == float(ap_label))[0][0]) if float(ap_label) in target_radii else None
-            if j_targ is None:
-                continue
+            ap_label = first_phot_files[j].split('_')[-1].split('.parquet')[0]
+            j_targ = j
 
-        alc_j     = alc_interp_all[j]          # (n_ims,)
-        alc_err_j = alc_err_interp_all[j]
+        alc_j     = alc_interp_all
+        alc_err_j = alc_err_interp_all
 
         valid_alc = ~np.isnan(alc_j)
 
@@ -510,10 +484,7 @@ def main(raw_args=None):
         alc_err_2d = alc_err_j[:, None]
 
         corr_flux     = F_m / alc_2d
-        corr_flux_err = np.sqrt(
-            (F_err_m / alc_2d)**2
-            + (F_m * alc_err_2d / alc_2d**2)**2
-        )
+        corr_flux_err = np.sqrt((F_err_m / alc_2d)**2 + (F_m * alc_err_2d / alc_2d**2)**2)
 
         norms = np.nanmedian(corr_flux, axis=0)
         norms = np.where(norms == 0, 1.0, norms)
@@ -521,8 +492,7 @@ def main(raw_args=None):
         corr_flux_err /= norms
 
         # scintillation added after normalization so it stays in fractional-flux units
-        ap_col_j = (ref_first_phot[j].split('_')[-1].split('.parquet')[0]
-                    if ap_rad is None else str(float(ap_rad)))
+        ap_col_j = ap_col  # fixed ref aperture (REF_AP_RAD)
         n_nonzero_j = (int(np.sum(np.array(weights_df[ap_col_j]) > 0))
                        if ap_col_j in weights_df.columns else 1)
         sigma_scint_j = 1.5 * sigma_s * np.sqrt(1.0 + 1.0 / max(n_nonzero_j, 1))
@@ -551,8 +521,8 @@ def main(raw_args=None):
             best_alc_col       = alc_j.astype('float32').copy()
             best_alc_err_col   = alc_err_j.astype('float32').copy()
             best_sat_flags     = saturated_flags[j_targ].copy()
-            best_nl_flags      = non_linear_flags[j_targ].copy()
-
+            best_nl_flags      = non_linear_flags[j_targ].copy() 
+        
     if best_corr_flux is None:
         raise RuntimeError('No valid aperture found. Check that ALC interpolation succeeded.')
 
@@ -565,7 +535,7 @@ def main(raw_args=None):
 
     # ── 16. Write one CSV per output source ────────────────────────────────────
     for tt in output_source_inds:
-        gaia_id = common_source_ids[tt]
+        gaia_id = common_source_ids
         source_name = field if gaia_id == tierras_target_id else f'Gaia DR3 {gaia_id}'
         out_file = output_path / f'{source_name}_global_lc.csv'
         if out_file.exists():
@@ -597,3 +567,6 @@ def main(raw_args=None):
         print(f'Wrote {out_file}')
 
     gc.collect()
+
+if __name__ == '__main__':
+    main()

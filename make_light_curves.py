@@ -89,7 +89,6 @@ if all_fields_last_week:
     target_list = np.unique(target_list)
 target_list = list(target_list)
 
-print(f'Updating light curves for {len(target_list)} fields.')
 for i in range(len(priority_targets)):
     shift_ind = np.where([j == priority_targets[i] for j in target_list])[0]
     if len(shift_ind) == 0: # if the target is in the priority list but was not observed, skip it 
@@ -97,11 +96,18 @@ for i in range(len(priority_targets)):
     target_list.remove(priority_targets[i])
     target_list.insert(0, priority_targets[i])
 
+print('Checking for THWOMP targets...')
+thwomp_targets = [t for t in target_list
+                  if not t.endswith('_ref')
+                  and f'{t}_ref' in target_list]
+
+
 for j in range(len(target_list)):
     target = target_list[j]
-    if 'TEST' in target or 'TARGET' in target:
+    if 'TEST' in target or 'TARGET' in target or target in thwomp_targets: # don't bother doing normal processing on thwomp targets
         continue
-    # if target == 'TIC33743172':
+    # if target == 'TIC33743172':breakpoint()
+
     #  continue
     print(f'Making global light curves for {target} (field {j+1} of {len(target_list)})')
     args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
@@ -109,10 +115,7 @@ for j in range(len(target_list)):
     analyze_global_main(args.split())
 
 # THWOMP: run analyze_thwomp for any field that has a sibling {field}_ref
-print('Checking for THWOMP targets...')
-thwomp_targets = [t for t in target_list
-                  if not t.endswith('_ref')
-                  and f'{t}_ref' in target_list]
+
 print(f'Found {len(thwomp_targets)} THWOMP target(s): {thwomp_targets}')
 for target in thwomp_targets:
     print(f'Running THWOMP analysis for {target}')

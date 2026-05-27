@@ -26,6 +26,8 @@ from photutils.aperture import CircularAperture, aperture_photometry
 from astropy.modeling.functional_models import Gaussian2D
 from astropy.wcs import WCS 
 from astropy.io import fits
+from astropy import log as astropy_log
+astropy_log.setLevel('ERROR') # ignore esa status messages
 from astroquery.gaia import Gaia
 Gaia.MAIN_GAIA_TABLE = 'gaiadr3.gaia_source'
 from astropy.time import Time
