@@ -755,6 +755,7 @@ def main(raw_args=None):
 	# breakpoint()
 	# reweight = False
 			
+	noise_ratio_sigma_upper = 3 if field.endswith('_ref') else 1
 	if reweight or force_reweight: # force_reweight is an argument passed by the user to make allow the reweighting to happen even if the reweight criteria above are not met
 		print(f'Weighting {len(ref_inds)} reference stars...')
 		weights_arr = np.zeros((len(ref_inds), n_dfs))
@@ -763,7 +764,7 @@ def main(raw_args=None):
 			flux_arr = binned_flux[i][:,ref_inds]
 			flux_err_arr = binned_flux_err[i][:,ref_inds]
 			nl_flag_arr = binned_nl_flags[i][:,ref_inds]
-			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids, noise_ratio_sigma_upper=noise_ratio_sigma_upper)
 			weights_arr[:, i] = weights
 	else:
 		# otherwise, read in existing reference star weights
@@ -776,7 +777,7 @@ def main(raw_args=None):
 
 	# last check: make sure the weights arry has weights for the same number of stars as the flux array
 	if weights_arr.shape[0] != flux.shape[2]:
-		reweight = True 
+		reweight = True
 		print(f'Weighting {len(ref_inds)} reference stars...')
 		weights_arr = np.zeros((len(ref_inds), n_dfs))
 		for i in range(n_dfs):
@@ -784,7 +785,7 @@ def main(raw_args=None):
 			flux_arr = binned_flux[i][:,ref_inds]
 			flux_err_arr = binned_flux_err[i][:,ref_inds]
 			nl_flag_arr = binned_nl_flags[i][:,ref_inds]
-			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids)
+			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids, noise_ratio_sigma_upper=noise_ratio_sigma_upper)
 			weights_arr[:, i] = weights
 		
 

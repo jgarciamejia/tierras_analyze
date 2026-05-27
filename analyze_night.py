@@ -44,7 +44,7 @@ def ref_selection(target_ind, sources, delta_target_rp=5, target_distance_limit=
 	# refs = sources.iloc[ref_inds]
 	return ref_inds
 
-def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, exptimes, source_ids=None, max_iters=20):
+def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, exptimes, source_ids=None, max_iters=20, noise_ratio_sigma_upper=1):
 
 	""" Use the comparison stars to derive a frame-by-frame zero-point magnitude. Also filter and mask bad cadences """
 	""" it's called "mearth_style" because it's inspired by the mearth pipeline """
@@ -182,7 +182,7 @@ def mearth_style_pat_weighted_flux(flux, flux_err, non_linear_flag, airmasses, e
 	# v, l, h = sigmaclip(noise_ratios[~np.isnan(noise_ratios)], 2, 2)
 	# weights[np.where(noise_ratios[~np.isnan(noise_ratios)]>h)[0]] = 0
 
-	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=1).mask 
+	sc_mask = sigma_clip(noise_ratios, sigma_lower=np.inf, sigma_upper=noise_ratio_sigma_upper).mask
 	weights[sc_mask] = 0 	
 
 	weights /= sum(weights)
