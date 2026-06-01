@@ -353,7 +353,7 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
 
     return fig, (ax1, ax2, ax4)
 
-def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, quality_mask=True, flux_flag_level=0.9, plot_mirror_fit=False, sigma_clip=False):
+def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, quality_mask=True, flux_flag_level=0.9, plot_mirror_fit=False, sigma_clip=False, x_start=None, x_end=None):
     try:
         df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/{target}_global_lc.csv', comment='#')
         ancillary_df = pd.read_csv(f'/data/tierras/fields/{field}/global_ancillary_data.csv')
@@ -382,6 +382,22 @@ def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, 
         saturated_flag = np.zeros(len(df)).astype(bool)
         nonlinear_flag = np.zeros(len(df)).astype(bool)
     exptime = np.array(ancillary_df['Exposure Time'])
+
+    # permit custom start/end times 
+    if x_start is not None and x_end is not None:
+        use_x = np.where((x-x_offset >= x_start) & (x-x_offset <= x_end))[0]
+        x = x[use_x]
+        y = y[use_x]
+        y_err = y_err[use_x]
+        sky = sky[use_x]
+        wcs_flag = wcs_flag[use_x]
+        pos_flag = pos_flag[use_x]
+        fwhm_flag = fwhm_flag[use_x]
+        flux_flag = flux_flag[use_x]
+        alc = alc[use_x]
+        saturated_flag = saturated_flag[use_x]
+        nonlinear_flag = nonlinear_flag[use_x]
+        exptime = exptime[use_x]
 
     # check for file indicating start/end times of transits; if it exists, use it to mask out in-transit points   
     if os.path.exists(f'/data/tierras/fields/{field}/{field}_transit_times.csv') and target == field:
@@ -596,6 +612,9 @@ def main(raw_args=None):
     ap.add_argument('-baseline_restarts', required=False, default='True', type=str, help='Re-baseline the data using the camera restart dates in /data/tierras/fields/camera_restart_dates.csv')
     ap.add_argument('-bin_days', required=False, default=1, type=int, help='Number of days to bin over for displaying binned data on the plot (helpful for visualizing faint signals); defaults to 1.')
     ap.add_argument('-plot_mirror_fit', required=False, default='True', help='Whether or not to plot the mirror dirtying fit')
+    ap.add_argument('-x_start', required=None, default=None, help='Restrict to data after x_start (in offset time units!)', type=float)
+    ap.add_argument('-x_end', required=None, default=None, help='Restrict to data before x_end (in offset time units!)', type=float)
+
     args = ap.parse_args(raw_args)
     field = args.field
     gaia_id = args.gaia_id
@@ -612,6 +631,8 @@ def main(raw_args=None):
     baseline_restarts = t_or_f(args.baseline_restarts)
     bin_days = args.bin_days
     plot_mirror_fit = t_or_f(args.plot_mirror_fit)
+    x_start = args.x_start
+    x_end   = args.x_end
     if gaia_id is None:
         target = field 
     else:
@@ -620,11 +641,9 @@ def main(raw_args=None):
     if autofreq: 
         pers = None 
     else:
-        pers = np.arange(per_lower, per_upper, per_res)
+        pers = np.arange(per_lower, per_upper, per_res) 
 
-    
-
-    x, y, y_err = load_data(field, ffname, target, median_filter_w=median_filter_w, baseline_restarts=baseline_restarts, quality_mask=quality_mask, flux_flag_level=flux_flag_level, plot_mirror_fit=plot_mirror_fit)
+    x, y, y_err = load_data(field, ffname, target, median_filter_w=median_filter_w, baseline_restarts=baseline_restarts, quality_mask=quality_mask, flux_flag_level=flux_flag_level, plot_mirror_fit=plot_mirror_fit, x_start=x_start, x_end=x_end)
 
     x, y, y_err, bx, by, bye, per, freq, power, x_offset = periodogram(x, y, y_err, pers=pers, sc=sc)
 
