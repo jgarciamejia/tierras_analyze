@@ -21,9 +21,6 @@ import matplotlib.ticker as ticker
 def linear_model(x, m, b):
     return m*x+b
 
-def sine_model(x, a, c):
-    return a*np.sin(2*np.pi*x+c)+1
-
 def get_binned_data(x, y, y_err, bin_days=1):
     # get binned data 
     x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
@@ -61,7 +58,7 @@ def get_binned_data(x, y, y_err, bin_days=1):
     
     return bx, by, bye, x_list
 
-def periodogram(x, y, y_err, pers=None, sc=False):
+def periodogram(x, y, y_err, nterms=1, pers=None, sc=False):
     global sky, bin_days
     
     # remove NaNs
@@ -106,41 +103,24 @@ def periodogram(x, y, y_err, pers=None, sc=False):
             y = y[use_inds]
             y_err = y_err[use_inds]
             sky = sky[use_inds]
-
-    # # get the data binned over each night 
-    # x_deltas = np.array([x[i]-x[i-1] for i in range(1,len(x))])
-    # x_breaks = np.where(x_deltas > 0.4)[0]
-    # bx = np.zeros(len(x_breaks) + 1)
-    # by = np.zeros_like(bx)
-    # bye = np.zeros_like(bx)
-
-    # for i in range(len(x_breaks) + 1):
-    #     if i == 0:
-    #         inds = np.arange(0,x_breaks[i]+1)
-    #     elif i < len(x_breaks):
-    #         inds = np.arange(x_breaks[i-1]+1, x_breaks[i]+1)
-    #     else:
-    #         inds = np.arange(x_breaks[-1]+1, len(x))
-        
-    #     bx[i] = np.mean(x[inds])
-    #     by[i] = np.median(y[inds])
-    #     bye[i] = np.median(y_err[inds]) / np.sqrt(len(inds))
     
     bx, by, bye, x_list = get_binned_data(x, y, y_err, bin_days=bin_days)
     
     x -= x_offset
     bx -= x_offset
 
+    ls = LombScargle(x, y, y_err, nterms=nterms)
+
     if pers is None:
-        freqs, power = LombScargle(x, y, y_err).autopower(maximum_frequency=1/per_lower)
+        freqs, power = ls.autopower(maximum_frequency=1/per_lower, samples_per_peak=10)
         pers = 1/freqs
     else:
         freqs = 1/pers
-        power = LombScargle(x, y, y_err).power(freqs)
+        power = ls.power(freqs, samples_per_peak=10)
 
-    return x, y, y_err, bx, by, bye, pers, freqs, power, x_offset
+    return x, y, y_err, bx, by, bye, pers, freqs, power, x_offset, ls
 
-def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_offset, target, baseline_restarts=False, color_by_time=False):
+def periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, x_offset, target, baseline_restarts=False, color_by_time=False):
     def on_click(event):
         ''' allow the user to click on different periodogram peaks and phase on them '''
 
@@ -191,14 +171,11 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
         ax4.set_xlabel('Phase', fontsize=14)
         ax4.set_ylabel('Normalized Flux', fontsize=14)
         ax4.grid(alpha=0.7)
-
-        model_times = np.linspace(phased_x[0], phased_x[-1], 10000)
-        model_amp = 0.05
-        model_phase = 0
-        model_offset = 1
-
-        params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase]) 
-        print(f'Amplitude: {abs(params[0])*1e3:.1f} ppt')
+ 
+        # compute phased model 
+        x_fit = np.linspace(0, best_per)
+        y_fit = ls.model(x_fit, 1/best_per)
+        x_fit_phase = x_fit / best_per
         
         phase_bin = 0.1
         n_bin = int(1/phase_bin)
@@ -218,12 +195,12 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
                 #by[i] = np.nanmean(phased_y[inds])
                 by[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
                 bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
-        ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
-        
-        ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='#b0b0b0', label='Best-fit sine model')
+        #ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
 
-        unphased_model = params[0]*np.sin(2*np.pi*unphased_model_times/best_per+params[1])+1
-        ax1.plot(unphased_model_times, unphased_model, color='#b0b0b0', zorder=0)
+        ax4.plot(x_fit_phase, y_fit, lw=2, color='#b0b0b0', label='Best-fit sine model')
+
+        # add plot of unphased model to first panel
+        ax1.plot(np.arange(0, x[-1], 0.01), ls.model(np.arange(0, x[-1], 0.01), 1/best_per), color='#b0b0b0', zorder=0)
 
         return 
 
@@ -266,29 +243,18 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax1_top = ax1.twiny()
     ax1_top.plot(Time(x+x_offset, format='jd', scale='tdb').datetime, y, marker='', ls='')
     ax1_top.xaxis.set_major_formatter(mdates.DateFormatter('%b %d %Y'))
-    ax1_top.xaxis.set_major_locator(ticker.MaxNLocator(5))
-    # ax1_top_ticks = ax1.get_xticks().astype(int)
-    # labels = [Time(x[0]+x_offset+i, format='jd', scale='tdb').datetime.strftime('%b %d %Y') for i in ax1_top_ticks]
-    # ax1_top.set_xticklabels(labels)
+    ax1_top.xaxis.set_major_locator(ticker.MaxNLocator(5)) 
     
     ax2.plot(per, power, marker='.', color='tab:blue', label='Data')
     ax2.set_xscale('log')
 
-    # peaks = find_peaks(power, prominence=0.02)
-    # peak_pers = per[peaks[0]]
-    # peak_pows = power[peaks[0]]
-
-    # ax2.plot(peak_pers, peak_pows, marker='o', color='tab:pink', mew=1.5, mfc='none', ls='')
-
     best_per = per[np.argmax(power)]
-    # ax2.plot(best_per, np.max(power), marker='o', label=f'P={best_per:.2f} d')
     highlight = ax2.plot(best_per, np.max(power), marker='o', color='m', label=f'P = {best_per:.2f} d')
     ax2.set_xlabel('Period (d)', fontsize=14)
     ax2.set_ylabel('Power', fontsize=14)
     ax2.legend() 
     ax2.grid(alpha=0.7)
 
-    # best_per = 2.48978
     ax3.plot(per, window_fn_power, marker='.', color='tab:orange')
     ax3.set_xscale('log')
     ax3.set_ylabel('Window fn. power', fontsize=14)
@@ -307,13 +273,10 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
     ax4.set_ylabel('Normalized Flux', fontsize=14)
     ax4.grid(alpha=0.7)
 
-    model_times = np.arange(phased_x[0], phased_x[-1], 0.001)
-    model_amp = 0.05
-    model_phase = 0
-    model_offset = 1
-
-    params, params_covariance = curve_fit(sine_model, phased_x, phased_y, sigma=phased_y_err, p0=[model_amp, model_phase]) 
-    print(f'Amplitude: {abs(params[0])*1e3:.1f} ppt')
+    # compute phased model 
+    x_fit = np.linspace(0, best_per)
+    y_fit = ls.model(x_fit, 1/best_per)
+    x_fit_phase = x_fit / best_per
     
     phase_bin = 0.1
     n_bin = int(1/phase_bin)
@@ -335,21 +298,13 @@ def periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_of
             bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
     ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
     
-    ax4.plot(model_times, sine_model(model_times, params[0], params[1]), lw=2, color='#b0b0b0', label='Best-fit sine model')
+    ax4.plot(x_fit_phase, y_fit, lw=2, color='#b0b0b0', label='Best-fit sine model')
+
 
     # add plot of unphased model to first panel
-    unphased_model_times = np.arange(x[0], x[-1], 0.001)
-    unphased_model = params[0]*np.sin(2*np.pi*unphased_model_times/best_per+params[1])+1
-    ax1.plot(unphased_model_times, unphased_model, color='#b0b0b0', zorder=0)
+    ax1.plot(np.arange(0, x[-1], 0.01), ls.model(np.arange(0, x[-1], 0.01), 1/best_per), color='#b0b0b0', zorder=0)
 
     plt.tight_layout()
-
-    # save data file? 
-    # phased_model = sine_model(phased_x, params[0], params[1])
-    # output_dict = {'x_phase':phased_x, 'y_phase':phased_y, 'y_err_phase':phased_y_err, 'model_phase':phased_model}
-    # output_df = pd.DataFrame(output_dict)
-    # output_df.to_csv(f'/home/ptamburo/{target}_phased_data.csv',index=0)
-    # breakpoint()
 
     return fig, (ax1, ax2, ax4)
 
@@ -614,6 +569,8 @@ def main(raw_args=None):
     ap.add_argument('-plot_mirror_fit', required=False, default='True', help='Whether or not to plot the mirror dirtying fit')
     ap.add_argument('-x_start', required=None, default=None, help='Restrict to data after x_start (in offset time units!)', type=float)
     ap.add_argument('-x_end', required=None, default=None, help='Restrict to data before x_end (in offset time units!)', type=float)
+    ap.add_argument('-nterms', required=None, default=1, help='Number of sine terms in the periodogram', type=int)
+
 
     args = ap.parse_args(raw_args)
     field = args.field
@@ -633,6 +590,7 @@ def main(raw_args=None):
     plot_mirror_fit = t_or_f(args.plot_mirror_fit)
     x_start = args.x_start
     x_end   = args.x_end
+    nterms  = args.nterms
     if gaia_id is None:
         target = field 
     else:
@@ -645,11 +603,11 @@ def main(raw_args=None):
 
     x, y, y_err = load_data(field, ffname, target, median_filter_w=median_filter_w, baseline_restarts=baseline_restarts, quality_mask=quality_mask, flux_flag_level=flux_flag_level, plot_mirror_fit=plot_mirror_fit, x_start=x_start, x_end=x_end)
 
-    x, y, y_err, bx, by, bye, per, freq, power, x_offset = periodogram(x, y, y_err, pers=pers, sc=sc)
+    x, y, y_err, bx, by, bye, per, freq, power, x_offset, ls = periodogram(x, y, y_err, pers=pers, sc=sc, nterms=nterms)
 
     # calculate the window function power of the data over the frequency grid 
     window_fn_power = LombScargle(x, np.ones_like(x), fit_mean=False, center_data=False).power(freq)
-    fig, ax = periodogram_plot(x, y, y_err, bx, by, bye, per, power, window_fn_power, x_offset, target, baseline_restarts, color_by_time=True)
+    fig, ax = periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, x_offset, target, baseline_restarts, color_by_time=True)
 
     breakpoint()
     return fig, ax, power
