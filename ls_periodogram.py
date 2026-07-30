@@ -195,7 +195,7 @@ def periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, 
                 #by[i] = np.nanmean(phased_y[inds])
                 by[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
                 bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
-        #ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
+        ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
 
         ax4.plot(x_fit_phase, y_fit, lw=2, color='#b0b0b0', label='Best-fit sine model')
 
@@ -306,6 +306,7 @@ def periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, 
 
     plt.tight_layout()
 
+    breakpoint() 
     return fig, (ax1, ax2, ax4)
 
 def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, quality_mask=True, flux_flag_level=0.9, plot_mirror_fit=False, sigma_clip=False, x_start=None, x_end=None):
@@ -487,18 +488,20 @@ def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, 
         ax[1].tick_params(labelsize=12)
         fig.tight_layout()
 
-    # now mask out low flux nights 
+    # now quality mask
+    flux_flag = np.zeros_like(wcs_flag)
+    inds = np.where(mirror_corrected_flux < flux_flag_level)
+    flux_flag[inds] = True
 
     if quality_mask: 
-        flux_flag = np.zeros_like(wcs_flag)
-        inds = np.where(mirror_corrected_flux < flux_flag_level)
-        flux_flag[inds] = True
-
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag | nonlinear_flag | saturated_flag))[0]
-        x = x[mask]
-        y = y[mask]
-        y_err = y_err[mask]
-        sky = sky[mask]
+    else:
+        mask = np.where(~(flux_flag))[0] # always cut on flux
+    
+    x = x[mask]
+    y = y[mask]
+    y_err = y_err[mask]
+    sky = sky[mask]
 
     nan_inds = ~np.isnan(y) & ~np.isnan(y_err)
     x = x[nan_inds]

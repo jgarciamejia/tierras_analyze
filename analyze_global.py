@@ -755,7 +755,9 @@ def main(raw_args=None):
 	# breakpoint()
 	# reweight = False
 			
-	noise_ratio_sigma_upper = 3 if field.endswith('_ref') else 1
+	# noise_ratio_sigma_upper = 3 if field.endswith('_ref') else 1
+	noise_ratio_sigma_upper = 4 # 1 is probably way too agressive
+
 	if reweight or force_reweight: # force_reweight is an argument passed by the user to make allow the reweighting to happen even if the reweight criteria above are not met
 		print(f'Weighting {len(ref_inds)} reference stars...')
 		weights_arr = np.zeros((len(ref_inds), n_dfs))

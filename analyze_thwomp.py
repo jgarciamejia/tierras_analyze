@@ -84,7 +84,7 @@ def main(raw_args=None):
         id_to_idx = {sid: idx for idx, sid in enumerate(df['source_id'])}
         source_inds.append([id_to_idx[sid] for sid in common_source_ids if sid in id_to_idx])
 
-    common_source_ids = common_source_ids[0] # restrict to just analyze the target
+    common_source_ids = np.array([common_source_ids[0]]) # restrict to just analyze the target
     n_sources = 1 
     print(f'{n_sources} sources common across all nights.')
 
@@ -206,6 +206,11 @@ def main(raw_args=None):
     print(f'times[0]={times[0]:.6f}, times[-1]={times[-1]:.6f}, '
           f'flux[0,0,0]={flux[0,0,0]:.1f}')
     
+    # write out a global ancillary .csv 
+    global_ancillary_path = f'/data/tierras/fields/{field}/global_ancillary_data.csv'
+    global_ancillary_data = pd.DataFrame(np.array([filenames, times, exposure_times, airmasses, ha, humidity, fwhm_x, fwhm_y, wcs_flags]).T, columns=['Filename', 'BJD TDB', 'Exposure Time', 'Airmass', 'Hour Angle', 'Humidity', 'FWHM X', 'FWHM Y', 'WCS Flag'])	
+    global_ancillary_data.to_csv(global_ancillary_path, index=0)
+    
     # ── 7. Read reference field photometry ─────────────────────────────────────
     ref_date_list = glob(f'/data/tierras/photometry/**/{ref_field}/{ffname}')
     ref_date_list = np.array(sorted(ref_date_list, key=lambda x: int(x.split('/')[4])))
@@ -308,6 +313,7 @@ def main(raw_args=None):
 
     print(f'Ref read-in: {time.time()-t2:.1f}s')
     print(f'times_ref[0]={times_ref[0]:.6f}, flux_ref[0,0,0]={flux_ref[0,0,0]:.1f}')
+
     # ── 8. Load reference field weights ────────────────────────────────────────
     weights_path = (f'/data/tierras/fields/{ref_field}/sources/lightcurves/'
                     f'{ffname}/weights.csv')
@@ -371,7 +377,7 @@ def main(raw_args=None):
         )[0]
 
         if len(ref_inds) < 2:
-            warnings.warn(f'{night_date}: fewer than 2 ref exposures; cannot interpolate.')
+            print(f'{night_date}: fewer than 2 ref exposures; cannot interpolate.')
             continue
 
         alc_raw     = flux_ref[0, ref_inds, :] @ weights_ordered
@@ -379,7 +385,9 @@ def main(raw_args=None):
 
         valid = ~np.isnan(alc_raw)
         if np.sum(valid) < 2:
-            warnings.warn(f'{night_date}: fewer than 2 non-NaN ALC points; skipping.')
+            print(f'{night_date}: fewer than 2 non-NaN ALC points; skipping.')
+            if night_date == '20260527':
+                breakpoint()
             continue
 
         t_ref_v = times_ref[ref_inds][valid]
@@ -409,6 +417,7 @@ def main(raw_args=None):
 
     print('ALC interpolation done.')
     print(f'ALC non-nan count: {np.sum(~np.isnan(alc_interp_all))} of {n_ims}')
+ 
     # ── 11. Quality masks (mirrors analyze_global logic) ───────────────────────
     x_deviations = np.median(x_pos - np.nanmedian(x_pos, axis=0), axis=1)
     y_deviations = np.median(y_pos - np.nanmedian(y_pos, axis=0), axis=1)
@@ -427,7 +436,7 @@ def main(raw_args=None):
 
     short_night_mask = np.zeros(n_ims, dtype='bool')
     quality_mask = (wcs_flags == 1) | (pos_mask == 1) | (flux_mask == 1)
-
+ 
     # ── 12. Drop nights below minimum_night_duration ───────────────────────────
     dates_to_remove = []
     for i, t_night in enumerate(times_list):
