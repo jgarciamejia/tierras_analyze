@@ -97,6 +97,8 @@ def main(raw_args=None):
 	ap.add_argument("-ap_rad", required=False, default=None, type=float, help="Size of aperture radius (in pixels) that you want to use for *ALL* light curves. If None, the code select the aperture that minimizes scatter on 5-minute timescales.")
 	ap.add_argument("-cut_contaminated", required=False, default=False, help="Whether or not to cut sources based on contamination metric.")
 	ap.add_argument("-force_reweight", required=False, default=False, help="Whether or not to force recalculation of reference star weights")
+	ap.add_argument("-is_thwomp", required=False, default=False, help="Whether or not observations are defocused THWOMP images")
+
 	args = ap.parse_args(raw_args)
 
 	GAIN = 5.9 
@@ -109,6 +111,7 @@ def main(raw_args=None):
 	force_reweight = t_or_f(args.force_reweight)
 	minimum_night_duration = args.minimum_night_duration
 	ap_rad = args.ap_rad	
+	is_thwomp = t_or_f(args.is_thwomp)
 	if args.target is None: 
 		target = field 
 	else:
@@ -607,8 +610,9 @@ def main(raw_args=None):
 	
 	# also mask on major axis FWHM measurements; we don't want images with large FWHM 
 	fwhm_mask = np.zeros(len(fwhm_x), dtype='int')
-	fwhm_inds = np.where(fwhm_x > 4)[0]
-	fwhm_mask[fwhm_inds] = 1
+	if not is_thwomp: # do not apply this mask in the case that the field is a defocused thwomp image
+		fwhm_inds = np.where(fwhm_x > 4)[0]
+		fwhm_mask[fwhm_inds] = 1
 
 	# if transit ephemerides have been provided, use them to construct a transit mask
 	transit_mask = None
@@ -717,13 +721,13 @@ def main(raw_args=None):
 	for i in range(n_bins):
 		non_masked_inds = bin_inds[i][~mask[bin_inds[i].astype(int)]].astype(int) # mask out potentially bad points for calculating weights
 
-		binned_times[i] = np.mean(times[non_masked_inds])
-		binned_airmass[i] = np.mean(airmasses[non_masked_inds])
+		binned_times[i] = np.nanmean(times[non_masked_inds])
+		binned_airmass[i] = np.nanmean(airmasses[non_masked_inds])
 		binned_exposure_time[i] = np.nansum(exposure_times[non_masked_inds])
 		for j in range(n_dfs):
 			binned_flux[j,i,:] = np.nanmean(flux[j,non_masked_inds], axis=0)
 			binned_flux_err[j,i,:] = np.nanmean(flux_err[j,non_masked_inds],axis=0)/np.sqrt(len(non_masked_inds))
-			binned_nl_flags[j,i,np.sum(non_linear_flags[j,non_masked_inds], axis=0)>1] = 1
+			binned_nl_flags[j,i,np.nansum(non_linear_flags[j,non_masked_inds], axis=0)>1] = 1
 
 	avg_mearth_times = np.zeros(n_sources)
 
@@ -789,7 +793,6 @@ def main(raw_args=None):
 			nl_flag_arr = binned_nl_flags[i][:,ref_inds]
 			weights, mask_ = mearth_style_pat_weighted_flux(flux_arr, flux_err_arr, nl_flag_arr, binned_airmass, binned_exposure_time, source_ids=ref_gaia_ids, noise_ratio_sigma_upper=noise_ratio_sigma_upper)
 			weights_arr[:, i] = weights
-		
 
 	if reweight or force_reweight:
 		# save a csv with the weights to the light curve directory 
@@ -800,7 +803,7 @@ def main(raw_args=None):
 		weights_df = pd.DataFrame(weights_dict)
 		weights_df.to_csv(f'{output_path}/weights.csv', index=0)
 		set_tierras_permissions(f'{output_path}/weights.csv')
-	
+
 	# reevaluate bin_inds to be the indices on each night. The optimal photometric aperture will be chosen based on which one minimizes sigma_n2n
 	bin_inds = []
 	for i in range(len(times_list)):

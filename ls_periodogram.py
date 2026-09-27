@@ -2,12 +2,11 @@ from astropy.timeseries import LombScargle
 import pandas as pd 
 import numpy as np 
 import matplotlib.pyplot as plt 
-plt.ioff()
+plt.ion()
 from scipy.stats import sigmaclip
 from median_filter import median_filter_uneven
 from scipy.optimize import curve_fit 
 import argparse 
-from ap_phot import t_or_f
 from scipy.signal import find_peaks
 import os 
 import matplotlib
@@ -17,7 +16,8 @@ from astropy.time import Time
 from datetime import datetime
 import matplotlib.dates as mdates
 import matplotlib.ticker as ticker
-
+from tierras_red_utils import t_or_f
+       
 def linear_model(x, m, b):
     return m*x+b
 
@@ -179,23 +179,23 @@ def periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, 
         
         phase_bin = 0.1
         n_bin = int(1/phase_bin)
-        bx = np.zeros(n_bin)
-        by = np.zeros(n_bin)
-        bye = np.zeros(n_bin)
+        bxp = np.zeros(n_bin)
+        byp = np.zeros(n_bin)
+        byep = np.zeros(n_bin)
         for i in range(n_bin):
             phase_start = i*phase_bin
             phase_end = (i+1)*phase_bin
-            bx[i] = (phase_start + phase_end)/2
+            bxp[i] = (phase_start + phase_end)/2
 
             inds = np.where((phased_x >= phase_start) & (phased_x < phase_end))[0]
             if len(inds) == 0:
-                by[i] = np.nan
-                bye[i] = np.nan
+                byp[i] = np.nan
+                byep[i] = np.nan
             else:
-                #by[i] = np.nanmean(phased_y[inds])
-                by[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
-                bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
-        ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
+                #byp[i] = np.nanmean(phased_y[inds])
+                byp[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
+                byep[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
+        ax4.errorbar(bxp, byp, byep, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
 
         ax4.plot(x_fit_phase, y_fit, lw=2, color='#b0b0b0', label='Best-fit sine model')
 
@@ -280,23 +280,23 @@ def periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, 
     
     phase_bin = 0.1
     n_bin = int(1/phase_bin)
-    bx = np.zeros(n_bin)
-    by = np.zeros(n_bin)
-    bye = np.zeros(n_bin)
+    bxp = np.zeros(n_bin)
+    byp = np.zeros(n_bin)
+    byep = np.zeros(n_bin)
     for i in range(n_bin):
         phase_start = i*phase_bin
         phase_end = (i+1)*phase_bin
-        bx[i] = (phase_start + phase_end)/2
+        bxp[i] = (phase_start + phase_end)/2
 
         inds = np.where((phased_x >= phase_start) & (phased_x < phase_end))[0]
         if len(inds) == 0:
-            by[i] = np.nan
-            bye[i] = np.nan
+            byp[i] = np.nan
+            byep[i] = np.nan
         else:
-            #by[i] = np.nanmean(phased_y[inds])
-            by[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
-            bye[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
-    ax4.errorbar(bx, by, bye, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
+            #byp[i] = np.nanmean(phased_y[inds])
+            byp[i] = np.nansum((1/phased_y_err[inds])**2*phased_y[inds])/np.nansum((1/phased_y_err[inds])**2)
+            byep[i] = np.nanstd(phased_y[inds])/np.sqrt(len(~np.isnan(phased_y[inds])))
+    ax4.errorbar(bxp, byp, byep, marker='o', color='#FF0000', zorder=4, ls='', ms=7, mew=2, mfc='none', mec='#FF0000', ecolor='#FF0000')
     
     ax4.plot(x_fit_phase, y_fit, lw=2, color='#b0b0b0', label='Best-fit sine model')
 
@@ -309,7 +309,7 @@ def periodogram_plot(ls, x, y, y_err, bx, by, bye, per, power, window_fn_power, 
     breakpoint() 
     return fig, (ax1, ax2, ax4)
 
-def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, quality_mask=True, flux_flag_level=0.9, plot_mirror_fit=False, sigma_clip=False, x_start=None, x_end=None):
+def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, quality_mask=True, flux_flag_level=0.9, plot_mirror_fit=False, sigma_clip=False, x_start=None, x_end=None, is_thwomp=False):
     try:
         df = pd.read_csv(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/{target}_global_lc.csv', comment='#')
         ancillary_df = pd.read_csv(f'/data/tierras/fields/{field}/global_ancillary_data.csv')
@@ -493,8 +493,10 @@ def load_data(field, ffname, target, median_filter_w=0, baseline_restarts=True, 
     inds = np.where(mirror_corrected_flux < flux_flag_level)
     flux_flag[inds] = True
 
-    if quality_mask: 
+    if (quality_mask) and (not is_thwomp): 
         mask = np.where(~(wcs_flag | pos_flag | fwhm_flag | flux_flag | nonlinear_flag | saturated_flag))[0]
+    elif (quality_mask) and (is_thwomp):
+        mask = np.where(~(wcs_flag | pos_flag | flux_flag | nonlinear_flag | saturated_flag))[0] # for thwomp targets, do not quality mask on fwhm because they are purposefully defocused
     else:
         mask = np.where(~(flux_flag))[0] # always cut on flux
     
@@ -573,7 +575,7 @@ def main(raw_args=None):
     ap.add_argument('-x_start', required=None, default=None, help='Restrict to data after x_start (in offset time units!)', type=float)
     ap.add_argument('-x_end', required=None, default=None, help='Restrict to data before x_end (in offset time units!)', type=float)
     ap.add_argument('-nterms', required=None, default=1, help='Number of sine terms in the periodogram', type=int)
-
+    ap.add_argument('--thwomp', action='store_true', required=False, default=False, help="If true, no quality mask done on FWHM because THWOMP targets are purposefully defocused")
 
     args = ap.parse_args(raw_args)
     field = args.field
@@ -594,6 +596,8 @@ def main(raw_args=None):
     x_start = args.x_start
     x_end   = args.x_end
     nterms  = args.nterms
+    is_thwomp = args.thwomp
+
     if gaia_id is None:
         target = field 
     else:
@@ -604,7 +608,7 @@ def main(raw_args=None):
     else:
         pers = np.arange(per_lower, per_upper, per_res) 
 
-    x, y, y_err = load_data(field, ffname, target, median_filter_w=median_filter_w, baseline_restarts=baseline_restarts, quality_mask=quality_mask, flux_flag_level=flux_flag_level, plot_mirror_fit=plot_mirror_fit, x_start=x_start, x_end=x_end)
+    x, y, y_err = load_data(field, ffname, target, median_filter_w=median_filter_w, baseline_restarts=baseline_restarts, quality_mask=quality_mask, flux_flag_level=flux_flag_level, plot_mirror_fit=plot_mirror_fit, x_start=x_start, x_end=x_end, is_thwomp=is_thwomp)
 
     x, y, y_err, bx, by, bye, per, freq, power, x_offset, ls = periodogram(x, y, y_err, pers=pers, sc=sc, nterms=nterms)
 

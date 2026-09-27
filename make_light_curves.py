@@ -101,16 +101,18 @@ thwomp_targets = [t for t in target_list
                   if not t.endswith('_ref')
                   and f'{t}_ref' in target_list]
 
-
 for j in range(len(target_list)):
-    target = target_list[j]
-    if 'TEST' in target or 'TARGET' in target or target in thwomp_targets: # don't bother doing normal processing on thwomp targets
-        continue
-    # if target == 'TIC33743172':breakpoint()
+    is_thwomp = False
 
-    #  continue
+    target = target_list[j]
+    if 'TEST' in target or 'TARGET' in target: #
+        continue
+    
+    if target in thwomp_targets:
+        is_thwomp = True
+
     print(f'Making global light curves for {target} (field {j+1} of {len(target_list)})')
-    args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight}'
+    args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight} -is_thwomp {is_thwomp}'
     print(args)
     analyze_global_main(args.split())
 

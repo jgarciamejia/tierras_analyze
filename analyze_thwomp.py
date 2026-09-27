@@ -13,10 +13,88 @@ from astropy.io import fits
 import pyarrow.parquet as pq
 import matplotlib.pyplot as plt 
 plt.ion()
+from scipy.optimize import minimize
+from scipy.linalg import cho_factor, cho_solve
+import celerite2
+from celerite2 import terms
 
 from analyze_global import identify_target_gaia_id
 from ap_phot import set_tierras_permissions, t_or_f, tierras_binner
 
+def neg_log_like(params, t_train, y_train, sigma_train):
+    log_amp, log_tau, log_jitter = params
+    amp, tau, jitter = np.exp(log_amp), np.exp(log_tau), np.exp(log_jitter)
+
+    kernel = terms.Matern32Term(sigma=amp, rho=tau)
+    gp = celerite2.GaussianProcess(kernel, mean=np.mean(y_train))
+
+    # add jitter in quadrature to the known per-point errors
+    yerr_eff = np.sqrt(sigma_train**2 + jitter**2)
+
+    try:
+        gp.compute(t_train, yerr=yerr_eff)
+    except celerite2.driver.LinAlgError:
+        return 1e10
+
+    return -gp.log_likelihood(y_train)
+
+def fit_gp(t_train, y_train, sigma_train, n_restarts=25, seed=0):
+    rng = np.random.default_rng(seed)
+    baseline_span = t_train.max() - t_train.min()
+    median_cadence = np.median(np.diff(t_train))
+
+    amp_guess = np.std(y_train)
+    amp_upper = 5*amp_guess
+    err_median = np.median(sigma_train)
+    jitter_upper = err_median
+
+    tau_lower = 1/24
+    tau_upper = 150
+
+    bounds = [
+        (np.log(1e-6), np.log(amp_upper)),           # log_amp
+        (np.log(tau_lower), np.log(tau_upper)),      # log_tau
+        (np.log(1e-7), np.log(jitter_upper)),        # log_jitter
+    ]
+
+    best = None
+    for _ in range(n_restarts):
+        x0 = [
+            np.log(rng.uniform(1e-4, amp_upper * 0.5)),
+            np.log(rng.uniform(tau_lower, tau_upper)),
+            np.log(rng.uniform(1e-7, jitter_upper * 0.5)),
+        ]
+        res = minimize(
+            neg_log_like, x0,
+            args=(t_train, y_train, sigma_train),
+            method='L-BFGS-B', bounds=bounds
+        )
+        if res.success and (best is None or res.fun < best.fun):
+            best = res
+
+    return best, bounds
+
+def predict_mean_std(t_star, t_train, y_train, sigma_train, params):
+    log_amp, log_tau, log_jitter = params
+    amp, tau, jitter = np.exp(log_amp), np.exp(log_tau), np.exp(log_jitter)
+
+    kernel = terms.Matern32Term(sigma=amp, rho=tau)
+    gp = celerite2.GaussianProcess(kernel, mean=np.mean(y_train))
+    gp.compute(t_train, yerr=sigma_train)
+
+    mean_pred, var_pred = gp.predict(y_train, t=t_star, return_var=True)
+    return mean_pred, np.sqrt(var_pred)
+
+def predict_full_cov(t_star, t_train, y_train, sigma_train, params):
+    log_amp, log_tau, log_jitter = params
+    amp, tau, jitter = np.exp(log_amp), np.exp(log_tau), np.exp(log_jitter)
+
+    kernel = terms.Matern32Term(sigma=amp, rho=tau)
+    gp = celerite2.GaussianProcess(kernel, mean=np.mean(y_train))
+    gp.compute(t_train, yerr=sigma_train)
+
+    mean_pred, cov_pred = gp.predict(y_train, t=t_star, return_cov=True)
+    return mean_pred, cov_pred
 
 def main(raw_args=None):
     ap = argparse.ArgumentParser()
@@ -84,8 +162,7 @@ def main(raw_args=None):
         id_to_idx = {sid: idx for idx, sid in enumerate(df['source_id'])}
         source_inds.append([id_to_idx[sid] for sid in common_source_ids if sid in id_to_idx])
 
-    common_source_ids = np.array([common_source_ids[0]]) # restrict to just analyze the target
-    n_sources = 1 
+    n_sources = len(common_source_ids)
     print(f'{n_sources} sources common across all nights.')
 
     # ── 3. Count total images and determine aperture file list ─────────────────
@@ -171,7 +248,7 @@ def main(raw_args=None):
                              f'{p} NL Flag',    f'{p} Sat Flag',
                              f'{p} Sky',        f'{p} X', f'{p} Y'])
 
-        for j in range(n_dfs):
+        for j in range(n_dfs): # replace with n_dfs
             file_idx = df_ind if df_ind is not None else j
             data_tab = pq.read_table(phot_files[file_idx], columns=use_cols, memory_map=True)
             stop = start + len(data_tab)
@@ -179,7 +256,7 @@ def main(raw_args=None):
             # ancillary data only filled on j==0 to avoid duplicate writes
             if j == 0:
                 times[start:stop]          = np.array(ancillary_tab['BJD TDB'])
-                times_list.append(times[start:stop])   # VIEW — updated when times -= x_offset
+                times_list.append(times[start:stop])  
                 airmasses[start:stop]      = np.array(ancillary_tab['Airmass'])
                 exposure_times[start:stop] = np.array(ancillary_tab['Exposure Time'])
                 filenames[start:stop]      = np.array(ancillary_tab['Filename'])
@@ -258,14 +335,8 @@ def main(raw_args=None):
         if pf:
             n_ims_ref += len(pq.read_table(pf[0]))
 
-    REF_AP_RAD = 14.0
     ref_first_phot = [
-        f for f in glob(ref_date_list[0] + '/**phot**.parquet')
-        if 'variable' not in f
-        and float(f.split('_')[-1].split('.parquet')[0]) == REF_AP_RAD
-    ]
-    if not ref_first_phot:
-        raise RuntimeError(f'No ref phot file found for ap_rad={REF_AP_RAD} in {ref_date_list[0]}.')
+        f for f in glob(ref_date_list[0] + '/**phot**.parquet') if 'variable' not in f]
     n_dfs_ref = len(ref_first_phot)
 
     # allocate
@@ -281,8 +352,7 @@ def main(raw_args=None):
         ref_phot_files = [
             f for f in glob(path + '/**phot**.parquet')
             if 'variable' not in f
-            and float(f.split('_')[-1].split('.parquet')[0]) == REF_AP_RAD
-        ]
+            and float(f.split('_')[-1].split('.parquet')[0])]
         if not ref_phot_files:
             continue
 
@@ -314,111 +384,50 @@ def main(raw_args=None):
     print(f'Ref read-in: {time.time()-t2:.1f}s')
     print(f'times_ref[0]={times_ref[0]:.6f}, flux_ref[0,0,0]={flux_ref[0,0,0]:.1f}')
 
-    # ── 8. Load reference field weights ────────────────────────────────────────
-    weights_path = (f'/data/tierras/fields/{ref_field}/sources/lightcurves/'
-                    f'{ffname}/weights.csv')
-    if not os.path.exists(weights_path):
+     # ── 8. Load target field weights ────────────────────────────────────────
+    targ_weights_path = (f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}/weights.csv')
+
+    if not os.path.exists(targ_weights_path):
         raise RuntimeError(
-            f'Reference field weights not found at {weights_path}. '
+            f'Reference field weights not found at {targ_weights_path}. '
+            f'Run analyze_global on {field} before analyze_thwomp.')
+    targ_weights_df = pd.read_csv(targ_weights_path)
+    targ_ref_ids = np.array(targ_weights_df['Ref ID'])
+    ap_col = ref_first_phot[0].split('_')[-1].split('.parquet')[0]
+    if ap_col not in targ_weights_df.columns:
+        raise RuntimeError(f'Aperture {ap_col} not in weights CSV.')
+    targ_weights_j = np.array(targ_weights_df[ap_col])
+
+    targ_weight_map = {rid: w for rid, w in zip(targ_ref_ids, targ_weights_j)}
+    targ_weights_ordered = np.array([targ_weight_map.get(sid, 0.0) for sid in common_source_ids])
+
+    # ── 9. Load reference field weights ────────────────────────────────────────
+    ref_weights_path = (f'/data/tierras/fields/{ref_field}/sources/lightcurves/{ffname}/weights.csv')
+    if not os.path.exists(ref_weights_path):
+        raise RuntimeError(
+            f'Reference field weights not found at {ref_weights_path}. '
             f'Run analyze_global on {ref_field} before analyze_thwomp.')
-    weights_df = pd.read_csv(weights_path)
+    ref_weights_df = pd.read_csv(ref_weights_path)
     # columns: 'Ref ID', '5.0', '6.0', ..., '20.0'
     # rows: one per reference star with a non-zero weight on at least one aperture
 
     # Map weight Gaia IDs to positions in common_source_ids_ref
-    weight_ref_ids = np.array(weights_df['Ref ID'])
+    weight_ref_ids = np.array(ref_weights_df['Ref ID'])
 
-    # ── 9. Subtract integer offset from times so both arrays share the same origin
+    # ── 10. Subtract integer offset from times so both arrays share the same origin
     x_offset = int(np.floor(times[0]))
     times     -= x_offset   # times_list entries are views → also updated
     times_ref -= x_offset   # times_list_ref entries are views → also updated
 
-    # ── 10. Build per-aperture, per-night interpolated ALC ─────────────────────
+    # ── 11. Build per-aperture, per-df, per-night interpolated ALC ─────────────────────
     EXTRAP_WARN_MIN = 5.0   # minutes; warn if target falls this far outside ref bounds
 
-    alc_interp_all     = np.full(n_ims, np.nan, dtype='float64')
-    alc_err_interp_all = np.full(n_ims, np.nan, dtype='float64')
+    alc_interp_all     = np.full((n_ims, n_dfs), np.nan, dtype='float64')
+    alc_err_interp_all = np.full((n_ims, n_dfs), np.nan, dtype='float64')
 
-    ap_col = ref_first_phot[0].split('_')[-1].split('.parquet')[0]
-    if ap_col not in weights_df.columns:
-        raise RuntimeError(f'Aperture {ap_col} not in weights CSV.')
-    weights_j = np.array(weights_df[ap_col])
+    targ_weight_df_ind = np.where(targ_weights_df['Ref ID'] == tierras_target_id)[0][0]
 
-    weight_map = {rid: w for rid, w in zip(weight_ref_ids, weights_j)}
-    weights_ordered = np.array([weight_map.get(sid, 0.0) for sid in common_source_ids_ref])
-
-    missing_weighted = [
-        rid for rid, w in zip(weight_ref_ids, weights_j)
-        if w > 0 and rid not in set(common_source_ids_ref)
-    ]
-    if missing_weighted:
-        warnings.warn(
-            f'Aperture {ap_col}: {len(missing_weighted)} source(s) with non-zero weight '
-            f'in weights.csv are absent from common_source_ids_ref and will be excluded '
-            f'from the ALC. Their total weight was '
-            f'{sum(weights_j[list(weight_ref_ids).index(r)] for r in missing_weighted):.4f}.'
-        )
-
-    for n_idx in range(len(dates)):
-        night_date = dates[n_idx]
-
-        ref_night_match = [ri for ri, rd in enumerate(ref_dates) if rd == night_date]
-        if not ref_night_match:
-            warnings.warn(f'{night_date}: no ref data; skipping night in THWOMP correction.')
-            continue
-        ri = ref_night_match[0]
-
-        t_night = times_list[n_idx]
-        t_ref_night = times_list_ref[ri]
-
-        targ_inds = np.where((times >= t_night[0]) & (times <= t_night[-1]))[0]
-        ref_inds  = np.where(
-            (times_ref >= t_ref_night[0]) & (times_ref <= t_ref_night[-1])
-        )[0]
-
-        if len(ref_inds) < 2:
-            print(f'{night_date}: fewer than 2 ref exposures; cannot interpolate.')
-            continue
-
-        alc_raw     = flux_ref[0, ref_inds, :] @ weights_ordered
-        alc_err_raw = np.sqrt((flux_err_ref[0, ref_inds, :]**2) @ (weights_ordered**2))
-
-        valid = ~np.isnan(alc_raw)
-        if np.sum(valid) < 2:
-            print(f'{night_date}: fewer than 2 non-NaN ALC points; skipping.')
-            if night_date == '20260527':
-                breakpoint()
-            continue
-
-        t_ref_v = times_ref[ref_inds][valid]
-        alc_v   = alc_raw[valid]
-        alc_e_v = alc_err_raw[valid]
-
-        t_targ   = times[targ_inds]
-        leading  = t_targ[t_targ < t_ref_v[0]]
-        trailing = t_targ[t_targ > t_ref_v[-1]]
-
-        if len(leading):
-            gap_min = (t_ref_v[0] - leading.min()) * 24 * 60
-            if gap_min > EXTRAP_WARN_MIN:
-                warnings.warn(
-                    f'{night_date} ap={ap_col}: {len(leading)} target exposures '
-                    f'extrapolated up to {gap_min:.1f} min before first ref.')
-        if len(trailing):
-            gap_min = (trailing.max() - t_ref_v[-1]) * 24 * 60
-            if gap_min > EXTRAP_WARN_MIN:
-                warnings.warn(
-                    f'{night_date} ap={ap_col}: {len(trailing)} target exposures '
-                    f'extrapolated up to {gap_min:.1f} min after last ref.')
-
-        cs = CubicSpline(t_ref_v, alc_v, extrapolate=True)
-        alc_interp_all[targ_inds]     = cs(t_targ)
-        alc_err_interp_all[targ_inds] = np.median(alc_e_v)
-
-    print('ALC interpolation done.')
-    print(f'ALC non-nan count: {np.sum(~np.isnan(alc_interp_all))} of {n_ims}')
- 
-    # ── 11. Quality masks (mirrors analyze_global logic) ───────────────────────
+    # ── 12. Quality masks ───────────────────────
     x_deviations = np.median(x_pos - np.nanmedian(x_pos, axis=0), axis=1)
     y_deviations = np.median(y_pos - np.nanmedian(y_pos, axis=0), axis=1)
 
@@ -426,7 +435,7 @@ def main(raw_args=None):
     median_flux = (np.nanmedian(flux[flux_ref_idx], axis=1) /
                    np.nanmedian(np.nanmedian(flux[flux_ref_idx], axis=1)))
     flux_mask = np.zeros(n_ims, dtype='int')
-    flux_mask[np.where(median_flux < 0.9)[0]] = 1
+    flux_mask[np.where(median_flux < 0.98)[0]] = 1
 
     pos_mask = np.zeros(n_ims, dtype='int')
     pos_mask[np.where((np.abs(x_deviations) > 20) | (np.abs(y_deviations) > 20))[0]] = 1
@@ -436,29 +445,10 @@ def main(raw_args=None):
 
     short_night_mask = np.zeros(n_ims, dtype='bool')
     quality_mask = (wcs_flags == 1) | (pos_mask == 1) | (flux_mask == 1)
- 
-    # ── 12. Drop nights below minimum_night_duration ───────────────────────────
-    dates_to_remove = []
-    for i, t_night in enumerate(times_list):
-        night_inds = np.where((times >= t_night[0]) & (times <= t_night[-1]))[0]
-        tot_exp = np.nansum(exposure_times[night_inds]) / 3600
-        if tot_exp <= minimum_night_duration:
-            print(f'{dates[i]} dropped: {tot_exp:.2f}h < {minimum_night_duration}h.')
-            short_night_mask[night_inds] = True
-            dates_to_remove.append(i)
-    if dates_to_remove:
-        dates      = np.delete(dates, dates_to_remove)
-        date_list  = np.delete(date_list, dates_to_remove)
-        times_list = [t for i, t in enumerate(times_list) if i not in dates_to_remove]
-    quality_mask |= short_night_mask
-
     mask_inv = ~quality_mask
-    print(f'Quality mask: {np.sum(mask_inv)}/{n_ims} exposures pass.')
 
-    # ── 13. Scintillation noise (base term; per-aperture n_refs applied in loop) ──
     sigma_s = (0.09 * 130**(-2/3) * airmasses**(7/4) * (2 * exposure_times)**(-1/2) * np.exp(-2306 / 8000))
 
-    # ── 14. Aperture loop — ALC correction and scatter minimisation ─────────────
     best_std          = np.inf
     best_ap_label     = None
     best_corr_flux     = None
@@ -470,72 +460,262 @@ def main(raw_args=None):
     best_sat_flags     = None
     best_nl_flags      = None
 
-    for j in range(n_dfs):
-        if ap_rad is not None:
-            j_targ = 0
-            ap_label = str(ap_rad)
-        else:
-            ap_label = first_phot_files[j].split('_')[-1].split('.parquet')[0]
-            j_targ = j
+    for i in range(n_dfs): # replace with n_dfs
+        t_targ_full = []
+        alc_targ_full = []
+        alc_targ_err_full = []
+        t_ref_full = []
+        alc_ref_full = []
+        alc_ref_err_full = []
 
-        alc_j     = alc_interp_all
-        alc_err_j = alc_err_interp_all
+        med_targ_refs_flux = np.median(np.nansum(flux[i, :, np.where(np.arange(n_sources) != targ_weight_df_ind)[0]], axis=1))
+        med_targ_flux = np.median(flux[i, :, targ_weight_df_ind])
+        med_ref_field_flux = np.median(np.nansum(flux_ref[i, :, :], axis=1))
+        
+        for n_idx in range(len(dates)):
 
-        valid_alc = ~np.isnan(alc_j)
+            radius = ref_weights_df.keys()[i+1]
+            night_date = dates[n_idx]
 
-        F     = flux[j_targ]                   # (n_ims, n_sources)
-        F_err = flux_err[j_targ]
-        sat   = saturated_flags[j_targ].astype(bool)
-        F_m     = np.where(sat, np.nan, F)
-        F_err_m = np.where(sat, np.nan, F_err)
+            ref_night_match = [ri for ri, rd in enumerate(ref_dates) if rd == night_date]
+            if not ref_night_match:
+                warnings.warn(f'{night_date}: no ref data; skipping night in THWOMP correction.')
+                continue
+            ri = ref_night_match[0]
 
-        alc_2d     = alc_j[:, None]
-        alc_err_2d = alc_err_j[:, None]
+            t_night = times_list[n_idx]
+            t_ref_night = times_list_ref[ri]
 
-        corr_flux     = F_m / alc_2d
-        corr_flux_err = np.sqrt((F_err_m / alc_2d)**2 + (F_m * alc_err_2d / alc_2d**2)**2)
+            targ_inds = np.where((times >= t_night[0]) & (times <= t_night[-1]))[0]
+            ref_inds  = np.where(
+                (times_ref >= t_ref_night[0]) & (times_ref <= t_ref_night[-1])
+            )[0]
 
-        norms = np.nanmedian(corr_flux, axis=0)
-        norms = np.where(norms == 0, 1.0, norms)
-        corr_flux     /= norms
-        corr_flux_err /= norms
+            if len(ref_inds) < 2:
+                print(f'{night_date}: fewer than 2 ref exposures; cannot interpolate.')
+                continue    
 
-        # scintillation added after normalization so it stays in fractional-flux units
-        ap_col_j = ap_col  # fixed ref aperture (REF_AP_RAD)
-        n_nonzero_j = (int(np.sum(np.array(weights_df[ap_col_j]) > 0))
-                       if ap_col_j in weights_df.columns else 1)
+            # load the targ_weights and renormalize after setting the target's weight in this aperture size to 0 
+            targ_weights_arr = np.array(targ_weights_df[radius])
+            targ_weights_arr[targ_weight_df_ind] = 0.0
+            targ_weights_arr /= np.nansum(targ_weights_arr)
+
+            alc_raw_targ   = flux[i, targ_inds, :] @ targ_weights_arr
+            alc_err_raw_targ = np.sqrt((flux_err[i, targ_inds, :]**2) @ (targ_weights_arr**2))
+
+            ref_weights_arr = np.array(ref_weights_df[radius])
+
+            alc_raw_ref    = flux_ref[i, ref_inds, :] @ ref_weights_arr
+            alc_err_raw_ref = np.sqrt((flux_err_ref[i, ref_inds, :]**2) @ (ref_weights_arr**2))
+
+            valid = ~np.isnan(alc_raw_ref)
+            if np.sum(valid) < 2:
+                print(f'{night_date}: fewer than 2 non-NaN ALC points; skipping.')
+                continue
+
+            t_ref_v = times_ref[ref_inds][valid]
+            alc_v_ref   = alc_raw_ref[valid]
+            alc_e_v_ref = alc_err_raw_ref[valid]
+
+            t_targ   = times[targ_inds]
+            leading  = t_targ[t_targ < t_ref_v[0]]
+            trailing = t_targ[t_targ > t_ref_v[-1]]
+
+            if len(leading):
+                gap_min = (t_ref_v[0] - leading.min()) * 24 * 60
+                if gap_min > EXTRAP_WARN_MIN:
+                    warnings.warn(
+                        f'{night_date} ap={ap_col}: {len(leading)} target exposures '
+                        f'extrapolated up to {gap_min:.1f} min before first ref.')
+            if len(trailing):
+                gap_min = (trailing.max() - t_ref_v[-1]) * 24 * 60
+                if gap_min > EXTRAP_WARN_MIN:
+                    warnings.warn(
+                        f'{night_date} ap={ap_col}: {len(trailing)} target exposures '
+                        f'extrapolated up to {gap_min:.1f} min after last ref.')
+
+            t_targ_v = t_targ
+            alc_v_targ = alc_raw_targ
+            alc_e_v_targ = alc_err_raw_targ
+
+            t_targ_full.extend(t_targ_v)
+            alc_targ_full.extend(alc_v_targ)
+            alc_targ_err_full.extend(alc_e_v_targ)
+            t_ref_full.extend(t_ref_v)
+            alc_ref_full.extend(alc_v_ref)
+            alc_ref_err_full.extend(alc_e_v_ref)
+
+        t_targ_full = np.array(t_targ_full)
+        alc_targ_full = np.array(alc_targ_full)
+        alc_targ_err_full = np.array(alc_targ_err_full)
+        t_ref_full = np.array(t_ref_full)
+        alc_ref_full = np.array(alc_ref_full)
+        alc_ref_err_full = np.array(alc_ref_err_full)
+
+        targ_flux = flux[i, :, targ_weight_df_ind]
+        targ_flux_err = flux_err[i, :, targ_weight_df_ind]
+
+        # normalize
+        norm_targ_alc = np.nanmedian(alc_targ_full)
+        norm_ref_alc  = np.nanmedian(alc_ref_full)
+        norm_targ_flux = np.nanmedian(targ_flux)
+
+        alc_targ_full /= norm_targ_alc
+        alc_targ_err_full /= norm_targ_alc
+
+        alc_ref_full /= norm_ref_alc
+        alc_ref_err_full /= norm_ref_alc
+
+        targ_flux /= norm_targ_flux
+        targ_flux_err /= norm_targ_flux
+
+        # do a GP regression to get the interpolation curve 
+
+        t_train_raw     = np.concatenate([t_ref_full, t_targ_full])
+        y_train_raw     = np.concatenate([alc_ref_full, alc_targ_full])
+        sigma_train_raw = np.concatenate([alc_ref_err_full, alc_targ_err_full])
+
+        sort_idx    = np.argsort(t_train_raw)
+        t_train     = t_train_raw[sort_idx]
+        y_train     = y_train_raw[sort_idx]
+        sigma_train = sigma_train_raw[sort_idx]
+
+        # --- 2. Fit hyperparameters ---
+        fit_result, bounds = fit_gp(t_train, y_train, sigma_train, n_restarts=1)
+        try:
+            best_params = fit_result.x
+        except:
+            print('No solution found, continuing.')
+            continue
+
+        correction_mean, correction_std = predict_mean_std(times, t_train, y_train, sigma_train, best_params)
+
+        # --- 4. Apply the correction (multiplicative, since these are normalized ALC fluxes ~1) ---
+        targ_flux_corr_gp = targ_flux / correction_mean
+        frac_err_targ_gp  = targ_flux_err / targ_flux
+        frac_err_corr_gp  = correction_std / correction_mean
+        targ_flux_corr_err_gp = targ_flux_corr_gp * np.sqrt(frac_err_targ_gp**2 + frac_err_corr_gp**2)
+
+        # do a correction just using the reference stars in the target field
+        targ_flux_corr_self = targ_flux / alc_targ_full
+        frac_err_targ_self  = targ_flux_err / targ_flux
+        frac_err_corr_self  = alc_targ_err_full / correction_mean
+        targ_flux_corr_err_self = targ_flux_corr_self * np.sqrt(frac_err_targ_self**2 + frac_err_corr_self**2)
+
+        # normalize 
+        norm = np.nanmedian(targ_flux_corr_gp) 
+        targ_flux_corr_gp /= norm 
+        targ_flux_corr_err_gp /= norm
+        
+        # account for scintillation
+        n_nonzero_j = (int(np.sum(np.array(ref_weights_df[radius]) > 0))
+                       if radius in ref_weights_df.columns else 1)
         sigma_scint_j = 1.5 * sigma_s * np.sqrt(1.0 + 1.0 / max(n_nonzero_j, 1))
-        corr_flux_err = np.sqrt(corr_flux_err**2 + sigma_scint_j[:, None]**2)
+
+        targ_flux_corr_err_gp   = np.sqrt(targ_flux_corr_err_gp**2 + sigma_scint_j**2)
+        targ_flux_corr_err_self = np.sqrt(targ_flux_corr_err_self**2 + sigma_scint_j**2)
 
         # 5-minute scatter on target, unmasked exposures with valid ALC
-        use = mask_inv & valid_alc
+        use = mask_inv 
         if np.sum(use) < 4:
             continue
         _, by, _ = tierras_binner(
             times[use] + x_offset,
-            corr_flux[use, targ_common_idx],
+            targ_flux_corr_gp[use],
             bin_mins=5
         )
         scatter = np.nanstd(by)
 
-        print(f'  ap={ap_label}: 5-min scatter on target = {scatter:.6f}')
+        print(f'  ap={radius}: 5-min scatter on target = {scatter:.6f}')
 
         if scatter < best_std:
-            best_std          = scatter
-            best_ap_label     = ap_label
-            best_corr_flux     = corr_flux.astype('float32').copy()
-            best_corr_flux_err = corr_flux_err.astype('float32').copy()
-            best_raw_flux      = F_m.astype('float32').copy()
-            best_raw_flux_err  = F_err_m.astype('float32').copy()
-            best_alc_col       = alc_j.astype('float32').copy()
-            best_alc_err_col   = alc_err_j.astype('float32').copy()
-            best_sat_flags     = saturated_flags[j_targ].copy()
-            best_nl_flags      = non_linear_flags[j_targ].copy() 
-        
-    if best_corr_flux is None:
+            best_ap_index           = i 
+            best_std                = scatter
+            best_ap_label           = radius
+            best_corr_flux_gp       = targ_flux_corr_gp.astype('float32').copy()
+            best_corr_flux_err_gp   = targ_flux_corr_err_gp.astype('float32').copy()
+            best_corr_flux_self     = targ_flux_corr_self.astype('float32').copy()
+            best_corr_flux_err_self = targ_flux_corr_err_self.astype('float32').copy()
+            best_raw_flux           = targ_flux.astype('float32').copy()
+            best_raw_flux_err       = targ_flux_err.astype('float32').copy()
+            best_alc_col            = correction_mean.astype('float32').copy()
+            best_alc_err_col        = correction_std.astype('float32').copy()
+            best_t_ref_full         = t_ref_full.astype('float32').copy()
+            best_t_targ_full        = t_targ_full.astype('float32').copy()
+            best_alc_ref_full       = alc_ref_full.astype('float32').copy()
+            best_alc_targ_full      = alc_targ_full.astype('float32').copy()
+            best_alc_ref_err_full   = alc_ref_err_full.astype('float32').copy()
+            best_alc_targ_err_full  = alc_targ_err_full.astype('float32').copy()
+            best_correction_mean    = correction_mean.astype('float32').copy()
+            best_correction_std     = correction_std.astype('float32').copy()  
+            best_params_save        = best_params      
+
+    if best_corr_flux_gp is None:
         raise RuntimeError('No valid aperture found. Check that ALC interpolation succeeded.')
+    
+    fig, ax = plt.subplots(2, 1, figsize=(10,12), sharex=True)
+    ax[0].errorbar(best_t_targ_full, best_alc_targ_full, best_alc_targ_err_full, marker='.', ls='', label='ALC using reference stars in the target field')
+    ax[0].errorbar(best_t_ref_full, best_alc_ref_full, best_alc_ref_err_full, marker='.', ls='', label='ALC using reference stars in the reference field')
+    ax[0].errorbar(times, best_raw_flux, best_raw_flux_err, marker='.', ls='', label='Target flux')
+    
+    ax[0].grid(alpha=0.5)
+
+    ax[1].errorbar(times, best_corr_flux_gp, best_corr_flux_err_gp, marker='.', ls='', color='k', alpha=0.5, label='GP correction')
+    # ax[1].errorbar(times, best_corr_flux_self, best_corr_flux_err_self, marker='.', ls='', alpha=0.5, label='ALC from target field stars correction' )
+
+
+    t_train_raw     = np.concatenate([best_t_ref_full, best_t_targ_full])
+    y_train_raw     = np.concatenate([best_alc_ref_full, best_alc_targ_full])
+    sigma_train_raw = np.concatenate([best_alc_ref_err_full, best_alc_targ_err_full])
+
+    sort_idx    = np.argsort(t_train_raw)
+    t_train     = t_train_raw[sort_idx]
+    y_train     = y_train_raw[sort_idx]
+    sigma_train = sigma_train_raw[sort_idx]
+
+    correction_mean, correction_std = predict_mean_std(times, t_train, y_train, sigma_train, best_params_save) 
+
+    ax[0].errorbar(times, correction_mean, correction_std, marker='.', color='k', ls='', label='GP model')
+    ax[0].legend()  
+
+    # do a hi-res model for display purposes
+    t_pad = 0.05 * (t_train.max() - t_train.min())  # small padding beyond data range
+    t_grid = np.linspace(t_train.min() - t_pad, t_train.max() + t_pad, 100000)
+    grid_mean, grid_std = predict_mean_std(t_grid, t_train, y_train, sigma_train, best_params_save)
+
+    ax[0].plot(t_grid, grid_mean, color='k')
+    ax[0].fill_between(t_grid, grid_mean-grid_std, grid_mean+grid_std, color='k', alpha=0.1)
+
+    ax[1].grid(alpha=0.5)
 
     print(f'Best aperture: {best_ap_label} (5-min scatter = {best_std:.6f})')
+
+    x_breaks = np.where(np.gradient(times) > 0.2)[0][1::2]
+    x_breaks = np.insert(x_breaks, 0, 0)
+    x_breaks = np.append(x_breaks, len(times))
+    n_nights = len(x_breaks) - 1
+    bx  = np.zeros(n_nights)
+    by_gp  = np.zeros(n_nights)
+    bye_gp = np.zeros(n_nights)
+    bx_self  = np.zeros(n_nights)
+    by_self  = np.zeros(n_nights)
+    bye_self = np.zeros(n_nights)
+    for i in range(n_nights):
+        start = x_breaks[i]
+        end = x_breaks[i+1]
+        bx[i]  = np.mean(times[start:end])
+        by_gp[i]  = np.median(best_corr_flux_gp[start:end])
+        bye_gp[i] = np.median(best_corr_flux_err_gp[start:end]) / np.sqrt(x_breaks[i+1]-x_breaks[i])
+        by_self[i]  = np.median(best_corr_flux_self[start:end])
+        bye_self[i] = np.median(best_corr_flux_err_self[start:end]) / np.sqrt(x_breaks[i+1]-x_breaks[i])
+
+    ax[1].errorbar(bx, by_gp, bye_gp, marker='o', color='k', ls='', zorder=4)
+    # ax[1].errorbar(bx, by_self, bye_self, marker='o', color='tab:blue', ls='', zorder=4)
+
+    ax[1].axhline(1, lw=2, alpha=0.5, zorder=0, color='k')
+    ax[0].axhline(1, lw=2, alpha=0.5, zorder=0, color='k')
+    ax[1].legend()
+
 
     # ── 15. Create output directory ─────────────────────────────────────────────
     output_path = Path(f'/data/tierras/fields/{field}/sources/lightcurves/{ffname}')
@@ -544,7 +724,7 @@ def main(raw_args=None):
 
     # ── 16. Write one CSV per output source ────────────────────────────────────
     for tt in output_source_inds:
-        gaia_id = common_source_ids
+        gaia_id = common_source_ids[tt]
         source_name = field if gaia_id == tierras_target_id else f'Gaia DR3 {gaia_id}'
         out_file = output_path / f'{source_name}_global_lc.csv'
         if out_file.exists():
@@ -552,10 +732,10 @@ def main(raw_args=None):
 
         output_dict = {
             'BJD TDB':                  times + x_offset,
-            'Flux':                     best_corr_flux[:, tt],
-            'Flux Error':               best_corr_flux_err[:, tt],
-            'Raw Flux (ADU)':           best_raw_flux[:, tt],
-            'Raw Flux Error (ADU)':     best_raw_flux_err[:, tt],
+            'Flux':                     best_corr_flux_gp,
+            'Flux Error':               best_corr_flux_err_gp,
+            'Raw Flux (ADU)':           best_raw_flux,
+            'Raw Flux Error (ADU)':     best_raw_flux_err,
             'ALC':                      best_alc_col,
             'ALC Error':                best_alc_err_col,
             'Sky Background (ADU/s)':   sky[:, tt] / exposure_times,
@@ -565,8 +745,8 @@ def main(raw_args=None):
             'Position Flag':            pos_mask,
             'FWHM Flag':                fwhm_mask_arr,
             'Flux Flag':                flux_mask,
-            'Saturated Flag':           best_sat_flags[:, tt].astype(int),
-            'Non-Linear Flag':          best_nl_flags[:, tt].astype(int),
+            'Saturated Flag':           saturated_flags[best_ap_index, :, tt], 
+            'Non-Linear Flag':          non_linear_flags[best_ap_index, :, tt]
         }
 
         with open(out_file, 'a') as fh:
@@ -576,6 +756,7 @@ def main(raw_args=None):
         print(f'Wrote {out_file}')
 
     gc.collect()
+    breakpoint()
 
 if __name__ == '__main__':
     main()

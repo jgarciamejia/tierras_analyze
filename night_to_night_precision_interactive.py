@@ -7,7 +7,7 @@ plt.ion()
 from scipy.stats import sigmaclip
 import pyarrow.parquet as pq 
 from astropy.io import fits 
-from ap_phot import get_flattened_files, t_or_f
+from tierras_red_utils import get_flattened_files
 from astropy.visualization import simple_norm 
 from matplotlib.gridspec import GridSpec
 from matplotlib.widgets import TextBox, Button
@@ -18,6 +18,7 @@ from photutils.aperture import CircularAperture, aperture_photometry
 from astropy.modeling.functional_models import Gaussian2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.widgets import CheckButtons
+from tierras_red_utils import t_or_f
 
 def main(raw_args=None):
 
