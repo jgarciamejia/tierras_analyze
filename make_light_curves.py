@@ -4,6 +4,7 @@ from analyze_thwomp import main as analyze_thwomp_main
 
 import numpy as np 
 import os 
+import logging
 from datetime import datetime, timedelta 
 from astropy.time import Time 
 import argparse
@@ -12,6 +13,11 @@ from ap_phot import t_or_f
 '''
     a wrapper function to do make light curves
 '''
+
+def log_and_print(msg, level='info'):
+    print(msg)
+    getattr(logging, level)(msg)
+
 ap = argparse.ArgumentParser()
 ap.add_argument("-single_field", required=False, default='', help="If passed, run pipeline on specified field only.")
 ap.add_argument("-start_field", required=False, default='', help="If you pass a name, the code will skip all targets in the target list preceding the passed field. This is just for convenience if you need to stop running the code in-person and start running in a remote session, or if the code crashes halway through.")
@@ -36,6 +42,11 @@ if date is None:
     last_night = (Time(datetime.now()) - 1).value
     date = str(last_night.year)+str(last_night.month).zfill(2)+str(last_night.day).zfill(2)
 
+# Log to the same file as the main pipeline so field-by-field progress shows
+# up interleaved with the rest of the night's log.
+logfile = f'/data/tierras/log/pipeline_{date}.log'
+logging.basicConfig(filename=logfile, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # read in priority target list 
 with open('/home/ptamburo/tierras/tierras_analyze/analysis_priority_fields.txt', 'r') as f:
     priority_targets = f.readlines()
@@ -43,12 +54,12 @@ priority_targets = [i.strip() for i in priority_targets][::-1]
 
 
 # part 2: make global light curves
-print('Making light curves...')
+log_and_print('    Making light curves...')
 targets = []
 try:
     targets.extend(sorted(os.listdir(f'/data/tierras/photometry/{date}')))
 except:
-    print(f'No photometry directories found on {date}...')
+    log_and_print(f'    No photometry directories found on {date}...')
 
 # regenerate the target list and do any necessary priority re-sorting
 # not necessarily all the targets will have had photometry done on them so it needs to be regenerated 
@@ -96,7 +107,6 @@ for i in range(len(priority_targets)):
     target_list.remove(priority_targets[i])
     target_list.insert(0, priority_targets[i])
 
-print('Checking for THWOMP targets...')
 thwomp_targets = [t for t in target_list
                   if not t.endswith('_ref')
                   and f'{t}_ref' in target_list]
@@ -111,16 +121,16 @@ for j in range(len(target_list)):
     if target in thwomp_targets:
         is_thwomp = True
 
-    print(f'Making global light curves for {target} (field {j+1} of {len(target_list)})')
-    args = f'-field {target} -cut_contaminated False -minimum_night_duration 0 -ffname {ffname} -force_reweight {force_reweight} -is_thwomp {is_thwomp}'
-    print(args)
+    log_and_print(f'    {target:<20} (field {j+1} of {len(target_list)})')
+    args = f'-field {target} -force_reweight {force_reweight} -is_thwomp {is_thwomp}'
+    # log_and_print(args)
     analyze_global_main(args.split())
 
 # THWOMP: run analyze_thwomp for any field that has a sibling {field}_ref
 
-print(f'Found {len(thwomp_targets)} THWOMP target(s): {thwomp_targets}')
+log_and_print(f'    Found {len(thwomp_targets)} THWOMP target(s): {thwomp_targets}')
 for target in thwomp_targets:
-    print(f'Running THWOMP analysis for {target}')
+    log_and_print(f'    Running THWOMP analysis for {target}')
     thwomp_args = f'-field {target} -ffname {ffname}'
     analyze_thwomp_main(thwomp_args.split())
 
