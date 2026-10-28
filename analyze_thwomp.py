@@ -756,7 +756,6 @@ def main(raw_args=None):
         print(f'Wrote {out_file}')
 
     gc.collect()
-    breakpoint()
 
 if __name__ == '__main__':
     main()
